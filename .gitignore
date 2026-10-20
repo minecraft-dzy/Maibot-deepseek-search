@@ -218,3 +218,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# MaiBot plugin local config (contains API keys, never commit)
+config.toml

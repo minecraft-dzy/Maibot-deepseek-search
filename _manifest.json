@@ -1,0 +1,42 @@
+{
+  "manifest_version": 2,
+  "id": "dzy.deepseek-search-plugin",
+  "version": "1.0.0",
+  "name": "DeepSeek 官方联网搜索 (deepseek-search)",
+  "description": "接入 DeepSeek 官方 Search API，为麦麦提供实时联网检索能力，返回带来源链接的搜索结果。",
+  "author": {
+    "name": "DZY",
+    "url": "https://github.com/minecraft-dzy"
+  },
+  "license": "Apache-2.0",
+  "urls": {
+    "repository": "https://github.com/minecraft-dzy/Maibot-deepseek-search",
+    "homepage": "https://github.com/minecraft-dzy/Maibot-deepseek-search",
+    "documentation": "https://github.com/minecraft-dzy/Maibot-deepseek-search#readme",
+    "issues": "https://github.com/minecraft-dzy/Maibot-deepseek-search/issues"
+  },
+  "host_application": {
+    "min_version": "1.0.0",
+    "max_version": "1.99.99"
+  },
+  "sdk": {
+    "min_version": "2.0.0",
+    "max_version": "2.99.99"
+  },
+  "dependencies": [
+    {
+      "type": "python_package",
+      "name": "httpx",
+      "version_spec": ">=0.24.0"
+    }
+  ],
+  "capabilities": [
+    "send.text"
+  ],
+  "i18n": {
+    "default_locale": "zh-CN",
+    "supported_locales": [
+      "zh-CN"
+    ]
+  }
+}
