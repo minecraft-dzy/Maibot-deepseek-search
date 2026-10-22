@@ -1,0 +1,18 @@
+{
+  "name": "yijing-xiangqi",
+  "version": "1.0.0",
+  "private": true,
+  "description": "弈境 · DeepSeek 中国象棋对弈平台",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1"
+  }
+}

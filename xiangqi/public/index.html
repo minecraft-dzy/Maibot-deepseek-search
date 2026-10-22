@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0d1514">
+  <meta name="description" content="弈境 · 接入 DeepSeek Flash 的中国象棋对弈平台，支持人机、双人与 AI 对 AI。">
+  <title>弈境 · AI 中国象棋</title>
+  <link rel="stylesheet" href="/css/app.css?v=20261022-4">
+</head>
+<body>
+  <div id="app">
+    <div id="auth-screen" class="screen auth-screen">
+      <section class="auth-visual" aria-hidden="true">
+        <div class="auth-board-wrap">
+          <img class="auth-board" src="/assets/board.svg" alt="">
+          <div class="auth-piece auth-piece-a"><img src="/assets/pieces/rC.svg" alt=""></div>
+          <div class="auth-piece auth-piece-b"><img src="/assets/pieces/bN.svg" alt=""></div>
+          <div class="auth-piece auth-piece-c"><img src="/assets/pieces/rK.svg" alt=""></div>
+        </div>
+        <div class="auth-visual-glow"></div>
+        <div class="auth-brand">
+          <div class="seal" aria-hidden="true"><span>弈</span></div>
+          <p class="eyebrow">YI JING · XIANGQI</p>
+          <h1>弈境</h1>
+          <p class="auth-tagline">楚河汉界，方寸之间。<br>与 DeepSeek 对坐，推演下一手。</p>
+          <div class="auth-features">
+            <span>人机对弈</span>
+            <span>双人房间</span>
+            <span>AI 互弈</span>
+            <span>全程存档</span>
+          </div>
+        </div>
+        <div class="auth-foot">DeepSeek Flash · 64 格之外的第 90 个交叉点</div>
+      </section>
+
+      <section class="auth-panel">
+        <div class="auth-panel-inner">
+          <div class="mini-brand">
+            <span class="mini-seal">弈</span>
+            <span>弈境</span>
+            <em>AI 中国象棋</em>
+          </div>
+          <div class="auth-copy">
+            <p class="eyebrow">ENTER THE GAME</p>
+            <h2 id="auth-title">入席</h2>
+            <p id="auth-subtitle">登录后开始一局。落子有声，思考留痕。</p>
+          </div>
+          <div class="auth-tabs" role="tablist">
+            <button class="auth-tab active" data-auth-tab="login" role="tab" aria-selected="true">登录</button>
+            <button class="auth-tab" data-auth-tab="register" role="tab" aria-selected="false">注册</button>
+            <span class="auth-tab-ink" aria-hidden="true"></span>
+          </div>
+          <form id="auth-form" class="auth-form" novalidate>
+            <label class="field">
+              <span>用户名</span>
+              <input id="auth-username" name="username" autocomplete="username" maxlength="16" placeholder="2–16 位字符" required>
+            </label>
+            <label class="field">
+              <span>密码</span>
+              <input id="auth-password" name="password" type="password" autocomplete="current-password" maxlength="72" placeholder="至少 6 位" required>
+            </label>
+            <p id="auth-error" class="form-error" role="alert"></p>
+            <button id="auth-submit" class="btn btn-primary btn-block" type="submit"><span>进入棋局</span></button>
+          </form>
+          <div class="auth-note">
+            <span class="status-dot"></span>
+            <span id="auth-model-note">DeepSeek-V4.1-Flash · 服务已接入</span>
+          </div>
+          <p class="auth-legal">继续即表示你同意文明对弈。对局内容会自动保存。</p>
+        </div>
+      </section>
+    </div>
+
+    <div id="lobby-screen" class="screen lobby-screen hidden">
+      <header class="app-header">
+        <a class="brand-lockup" href="#" id="lobby-brand">
+          <span class="mini-seal">弈</span>
+          <span class="brand-name">弈境</span>
+          <span class="brand-sub">AI 中国象棋</span>
+        </a>
+        <div class="header-right">
+          <span class="model-pill"><span class="status-dot"></span> DeepSeek Flash</span>
+          <span class="user-chip" id="lobby-user">棋手</span>
+          <button class="icon-btn" id="logout-btn" title="退出登录" aria-label="退出登录">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4M16 17l5-5-5-5M21 12H9"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <main class="lobby-wrap">
+        <section class="lobby-hero reveal">
+          <div class="hero-copy">
+            <p class="eyebrow">THE ART OF WAR, ON NINETY POINTS</p>
+            <h1>落子之前，<br><span>先在心中走完十步。</span></h1>
+            <p class="hero-sub">服务器执掌规则，Planner 驱动棋手。你可以与 AI 对坐、邀友同弈，也可以让两套 DeepSeek 思维在棋盘上互相试探。</p>
+            <div class="hero-stats" id="lobby-stats"></div>
+          </div>
+          <div class="hero-orbit" aria-hidden="true">
+            <div class="orbit-ring ring-1"></div>
+            <div class="orbit-ring ring-2"></div>
+            <div class="orbit-ring ring-3"></div>
+            <div class="orbit-piece p1"><img src="/assets/pieces/rR.svg" alt=""></div>
+            <div class="orbit-piece p2"><img src="/assets/pieces/bC.svg" alt=""></div>
+            <div class="orbit-piece p3"><img src="/assets/pieces/rN.svg" alt=""></div>
+            <div class="orbit-core">弈</div>
+          </div>
+        </section>
+
+        <section class="mode-grid reveal" aria-label="开始对局">
+          <button class="mode-card mode-pve" data-open-mode="pve">
+            <div class="mode-icon"><span>人</span><i>×</i><span>AI</span></div>
+            <div class="mode-body">
+              <span class="mode-kicker">SOLO · VS MODEL</span>
+              <h3>人机对弈</h3>
+              <p>与 DeepSeek Flash 对坐。自定义它的棋风与系统提示词。</p>
+            </div>
+            <span class="mode-arrow" aria-hidden="true">↗</span>
+          </button>
+          <button class="mode-card mode-pvp" data-open-mode="pvp">
+            <div class="mode-icon"><span>楚</span><i>河</i><span>汉</span></div>
+            <div class="mode-body">
+              <span class="mode-kicker">DUEL · TWO SEATS</span>
+              <h3>双人对弈</h3>
+              <p>创建一间棋室，把房间号交给对手。服务器实时同步每一步。</p>
+            </div>
+            <span class="mode-arrow" aria-hidden="true">↗</span>
+          </button>
+          <button class="mode-card mode-aivai" data-open-mode="aivai">
+            <div class="mode-icon"><span>AI</span><i>⇄</i><span>AI</span></div>
+            <div class="mode-body">
+              <span class="mode-kicker">OBSERVE · TWO MINDS</span>
+              <h3>双 AI 观弈</h3>
+              <p>为红黑两方分别设定人格。看两种思路在棋盘上彼此拆解。</p>
+            </div>
+            <span class="mode-arrow" aria-hidden="true">↗</span>
+          </button>
+        </section>
+
+        <section class="join-strip reveal">
+          <div class="join-copy">
+            <span class="eyebrow">HAVE A ROOM CODE?</span>
+            <strong>持帖入席</strong>
+          </div>
+          <form id="join-form" class="join-form">
+            <input id="join-code" maxlength="8" placeholder="输入 8 位房间号" aria-label="房间号">
+            <button class="btn btn-ghost" type="submit">加入棋室</button>
+          </form>
+          <p id="join-error" class="join-error" role="alert"></p>
+        </section>
+
+        <div class="lobby-columns">
+          <section class="panel reveal">
+            <div class="panel-head">
+              <div>
+                <span class="eyebrow">YOUR ARCHIVE</span>
+                <h2>我的棋局</h2>
+              </div>
+              <button class="text-btn" id="refresh-lobby">刷新</button>
+            </div>
+            <div id="my-games" class="game-list"></div>
+          </section>
+          <section class="panel reveal">
+            <div class="panel-head">
+              <div>
+                <span class="eyebrow">OPEN TABLES</span>
+                <h2>公开棋局</h2>
+              </div>
+              <span class="tiny-note">实时对局可旁观</span>
+            </div>
+            <div id="public-games" class="game-list"></div>
+          </section>
+          <aside class="lobby-aside reveal">
+            <div class="panel stat-panel">
+              <span class="eyebrow">RECORD</span>
+              <h2>战绩</h2>
+              <div id="stat-grid" class="stat-grid"></div>
+            </div>
+            <div class="panel rules-panel">
+              <span class="eyebrow">PLANNER</span>
+              <h2>它们如何思考</h2>
+              <ul class="trace-list">
+                <li><span>01</span>收到事件：对手落子或收到消息</li>
+                <li><span>02</span>调用 <code>view_board</code> 读取真实局面</li>
+                <li><span>03</span>形成计划并调用 <code>make_move</code> 落子</li>
+                <li><span>04</span>思考与工具轨迹写入棋谱并自动保存</li>
+              </ul>
+            </div>
+            <div class="panel tip-panel">
+              <span class="tip-mark">谱</span>
+              <p>只有轮到你时，落子才会被服务器接受。AI 也不例外。</p>
+            </div>
+          </aside>
+        </div>
+
+        <footer class="site-foot">
+          <span>弈境 · YIJING</span>
+          <span>棋盘与棋子素材来自 <a href="https://github.com/lengyanyu258/xiangqiboardjs" target="_blank" rel="noreferrer">xiangqiboardjs</a>（MIT），传统棋子图形再设计。</span>
+        </footer>
+      </main>
+    </div>
+
+    <div id="game-screen" class="screen game-screen hidden">
+      <header class="game-header">
+        <div class="game-header-left">
+          <button class="icon-btn" id="back-lobby" title="返回大厅" aria-label="返回大厅">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <div class="game-title">
+            <div class="game-title-row">
+              <strong>对局</strong>
+              <button class="room-code" id="room-code" title="复制房间号">······</button>
+              <span class="mode-badge" id="game-mode-badge">人机</span>
+            </div>
+            <span class="save-state" id="save-state"><span class="status-dot"></span> 自动保存</span>
+          </div>
+        </div>
+        <div class="game-header-actions">
+          <button class="btn btn-compact btn-ghost" id="flip-board" title="翻转棋盘">翻转</button>
+          <button class="btn btn-compact btn-ghost" id="copy-invite">复制观战链接</button>
+          <button class="btn btn-compact btn-ghost hidden" id="pause-game">暂停</button>
+          <button class="btn btn-compact btn-danger-ghost" id="end-game">结束</button>
+        </div>
+      </header>
+
+      <main class="game-layout">
+        <aside class="game-rail">
+          <div class="rail-block">
+            <span class="eyebrow">TABLE</span>
+            <div class="rail-table" id="rail-table"></div>
+          </div>
+          <div class="rail-block rail-moves-block">
+            <div class="rail-head">
+              <span class="eyebrow">MOVES</span>
+              <span class="tiny-note" id="move-count-label">0 手</span>
+            </div>
+            <div class="mini-moves" id="mini-moves"></div>
+          </div>
+          <div class="rail-block rail-note">
+            <span class="tip-mark">规</span>
+            <p>将帅不可照面；困毙判负。服务器逐手校验。</p>
+          </div>
+        </aside>
+
+        <section class="board-stage">
+          <div class="player-bar" id="player-top"></div>
+          <div class="board-center">
+            <div class="board-shell" id="board-shell">
+              <img class="board-art" src="/assets/board.svg" alt="中国象棋棋盘" draggable="false">
+              <div class="board-vignette" aria-hidden="true"></div>
+              <div class="board-marks" id="board-marks"></div>
+              <div class="board-pieces" id="board-pieces"></div>
+              <div class="board-overlay hidden" id="board-overlay">
+                <div class="overlay-inner" id="board-overlay-inner"></div>
+              </div>
+              <div class="board-corner corner-tl" aria-hidden="true"></div>
+              <div class="board-corner corner-br" aria-hidden="true"></div>
+            </div>
+          </div>
+          <div class="player-bar" id="player-bottom"></div>
+          <div class="board-meta">
+            <div class="turn-line"><span class="turn-dot" id="turn-dot"></span><span id="turn-text">等待开始</span></div>
+            <div class="board-hint" id="board-hint">点击己方棋子，再点目标位置。</div>
+          </div>
+          <div class="result-banner hidden" id="result-banner"></div>
+        </section>
+
+        <aside class="intel-panel">
+          <div class="panel-tabs" role="tablist">
+            <button class="panel-tab active" data-tab="ai" role="tab" aria-selected="true">AI 推演</button>
+            <button class="panel-tab" data-tab="chat" role="tab" aria-selected="false">对局消息<span class="unread-badge hidden" id="chat-unread">0</span></button>
+            <button class="panel-tab" data-tab="moves" role="tab" aria-selected="false">完整棋谱</button>
+          </div>
+
+          <div class="tab-pane active" id="tab-ai">
+            <div class="ai-head">
+              <div class="ai-switch" id="ai-switch"></div>
+              <span class="ai-state" id="ai-state"><span class="status-dot"></span> 待机</span>
+            </div>
+            <details class="prompt-fold" id="prompt-fold">
+              <summary>系统提示词</summary>
+              <p id="prompt-text"></p>
+            </details>
+            <div class="live-thought hidden" id="live-thought">
+              <div class="live-head"><span class="pulse-dot"></span><span id="live-title">正在推演</span></div>
+              <div class="live-body" id="live-body"></div>
+            </div>
+            <div class="trace-scroll" id="trace-scroll">
+              <div id="trace-list" class="trace-list"></div>
+            </div>
+            <div class="trace-footer">
+              <button class="text-btn hidden" id="load-full-trace">载入完整推演记录</button>
+              <span id="trace-count-label"></span>
+            </div>
+          </div>
+
+          <div class="tab-pane" id="tab-chat">
+            <div class="chat-scroll" id="chat-scroll"></div>
+            <form class="chat-form" id="chat-form">
+              <input id="chat-input" maxlength="500" placeholder="对棋手说些什么…" autocomplete="off" aria-label="发送消息">
+              <button class="send-btn" type="submit" aria-label="发送">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12l16-8-6 8 6 8z"/></svg>
+              </button>
+            </form>
+            <p class="chat-note">消息会触发 AI 的 Planner。请勿发送敏感信息。</p>
+          </div>
+
+          <div class="tab-pane" id="tab-moves">
+            <div class="full-moves" id="full-moves"></div>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <div id="modal-root" class="modal-root hidden"></div>
+    <div id="toast-root" class="toast-root" role="status" aria-live="polite"></div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/app.js?v=20261022-4"></script>
+</body>
+</html>
