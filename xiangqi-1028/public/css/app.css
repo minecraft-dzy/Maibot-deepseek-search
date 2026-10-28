@@ -685,6 +685,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus
 .game-players b { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
 .game-players i { color: var(--faint); font-style: normal; font-size: 9px; }
 .game-sub { display: flex; flex-wrap: wrap; gap: 6px 10px; margin-top: 3px; color: var(--faint); font-size: 10px; }
+.private-tag { color: #b4a37e; }
 .game-actions { display: flex; gap: 6px; }
 .mini-btn {
   padding: 5px 9px;
@@ -934,6 +935,50 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus
   line-height: 1.65;
 }
 .modal-note .status-dot { margin-top: 6px; flex: 0 0 auto; }
+.visibility-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin: 4px 0 10px;
+  padding: 11px 12px;
+  border: 1px solid rgba(216, 177, 104, 0.12);
+  border-radius: 8px;
+  background: rgba(216, 177, 104, 0.028);
+}
+.visibility-copy { flex: 1; min-width: 0; }
+.visibility-copy b {
+  display: block;
+  margin-bottom: 2px;
+  color: #d8c9aa;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+}
+.visibility-copy span { display: block; color: var(--faint); font-size: 10px; line-height: 1.65; }
+.visibility-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 24px;
+  margin-top: 2px;
+  padding: 0;
+  border: 1px solid rgba(216, 177, 104, 0.2);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.28);
+  transition: background 0.2s, border-color 0.2s;
+}
+.visibility-switch .visibility-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #6e7c73;
+  transition: transform 0.2s cubic-bezier(.2,.8,.2,1), background 0.2s;
+}
+.visibility-switch.on { background: rgba(216, 177, 104, 0.28); border-color: rgba(216, 177, 104, 0.5); }
+.visibility-switch.on .visibility-knob { transform: translateX(18px); background: var(--gold-bright); }
 .modal-error { min-height: 18px; margin: 2px 0 8px; color: #df8a7b; font-size: 11px; }
 
 /* ============ game ============ */

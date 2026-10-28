@@ -32,6 +32,8 @@
     skillFrom: null,
     shop: null,
     shopOpen: false,
+    debugKeys: '',
+    debugBusy: false,
     seenChats: new Set(),
     resultAnnounced: false,
     health: null,
@@ -53,6 +55,7 @@
   const FILES = 'abcdefghi';
   const MODE_LABEL = { pvp: '双人对弈', pve: '人机对弈', aivai: 'AI 对 AI', skill: '技能对弈' };
   const MODE_SHORT = { pvp: '双人', pve: '人机', aivai: 'AI 互弈', skill: '技能' };
+  const DEBUG_POINTS_SEQUENCE = 'dzy114514';
   const PRESETS = [
     {
       label: '步步紧逼',
@@ -325,6 +328,7 @@
     $('#shop-open-panel').addEventListener('click', openShopModal);
 
     document.addEventListener('keydown', (event) => {
+      handleDebugSequence(event);
       if (event.key === 'Escape') {
         if (!$('#modal-root').classList.contains('hidden')) closeModal();
         else if (S.skill) cancelSkill();
@@ -350,6 +354,50 @@
     S.selected = null;
     if (S.socket) S.socket.emit('leave_game');
     await fetchLobby();
+  }
+
+  function handleDebugSequence(event) {
+    if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
+    const modalOpen = !$('#modal-root').classList.contains('hidden');
+    if (!modalOpen || S.create?.mode !== 'special') {
+      S.debugKeys = '';
+      return;
+    }
+    const tag = event.target?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (typeof event.key !== 'string' || event.key.length !== 1 || !/[a-z0-9]/i.test(event.key)) {
+      S.debugKeys = '';
+      return;
+    }
+    S.debugKeys = (S.debugKeys + event.key.toLowerCase()).slice(-DEBUG_POINTS_SEQUENCE.length);
+    if (S.debugKeys === DEBUG_POINTS_SEQUENCE) {
+      S.debugKeys = '';
+      redeemDebugPoints();
+    }
+  }
+
+  async function redeemDebugPoints() {
+    if (S.debugBusy) return;
+    S.debugBusy = true;
+    try {
+      const data = await api('/api/debug/points', {
+        method: 'POST',
+        body: { code: DEBUG_POINTS_SEQUENCE },
+      });
+      S.user = data.user;
+      if (S.lobby) S.lobby.user = data.user;
+      renderLobby();
+      const hint = $('#modal-error');
+      if (hint) {
+        hint.textContent = `调试积分 +${data.reward} 已到账`;
+        hint.style.color = '#a8cbb9';
+      }
+      toast(`调试积分 +${data.reward} 已到账`, 'success');
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      S.debugBusy = false;
+    }
   }
 
   function startLobbyPolling() {
@@ -456,6 +504,7 @@
       sub.appendChild(badge);
       sub.appendChild(el('span', '', MODE_SHORT[game.mode] || game.mode));
       if (game.special) sub.appendChild(el('span', '', '极限'));
+      if (game.isPublic === false) sub.appendChild(el('span', 'private-tag', '仅链接'));
       sub.appendChild(el('span', '', `${game.moveCount} 手`));
       const when = el('span', '', relativeTime(game.updatedAt));
       sub.appendChild(when);
@@ -657,6 +706,7 @@
     S.create = {
       mode: mode || 'pve',
       side: 'red',
+      isPublic: true,
       prompts: {
         red: saved?.red ?? defaults.red ?? '',
         black: saved?.black ?? defaults.black ?? '',
@@ -758,6 +808,8 @@
       body.appendChild(grid);
     }
 
+    body.appendChild(buildVisibilityToggle());
+
     const error = el('p', 'modal-error');
     error.id = 'modal-error';
     body.appendChild(error);
@@ -783,6 +835,26 @@
     note.appendChild(el('span', 'status-dot'));
     note.appendChild(document.createTextNode(text));
     return note;
+  }
+
+  function buildVisibilityToggle() {
+    const row = el('div', 'visibility-row');
+    const copy = el('div', 'visibility-copy');
+    copy.appendChild(el('b', '', '公开对局'));
+    copy.appendChild(el('span', '', '开启后会出现在大厅「公开棋局」；关闭后仅持有房间号或链接的人可以进入观战。观众发言只展示给真人，不会进入 AI 的 Planner。'));
+    row.appendChild(copy);
+    const toggle = el('button', `visibility-switch ${S.create.isPublic ? 'on' : ''}`);
+    toggle.type = 'button';
+    toggle.setAttribute('role', 'switch');
+    toggle.setAttribute('aria-checked', String(!!S.create.isPublic));
+    toggle.setAttribute('aria-label', S.create.isPublic ? '关闭公开对局' : '开启公开对局');
+    toggle.appendChild(el('span', 'visibility-knob'));
+    toggle.addEventListener('click', () => {
+      S.create.isPublic = !S.create.isPublic;
+      renderCreateModal();
+    });
+    row.appendChild(toggle);
+    return row;
   }
 
   function buildSideChoice() {
@@ -849,6 +921,7 @@
         mode: S.create.mode === 'special' ? 'pve' : S.create.mode,
         side: S.create.side,
         special: S.create.mode === 'special',
+        isPublic: S.create.isPublic !== false,
         redPrompt: S.create.prompts.red,
         blackPrompt: S.create.prompts.black,
       };
@@ -1187,9 +1260,8 @@
 
   function renderHeader() {
     $('#room-code').textContent = S.game.id;
-    $('#game-mode-badge').textContent = S.game.special
-      ? '极限挑战'
-      : (MODE_SHORT[S.game.mode] || S.game.mode);
+    const modeText = S.game.special ? '极限挑战' : (MODE_SHORT[S.game.mode] || S.game.mode);
+    $('#game-mode-badge').textContent = S.game.isPublic === false ? `${modeText} · 私密` : modeText;
     document.title = `${S.game.id} · 弈境`;
   }
 
@@ -1324,7 +1396,12 @@
     if (card.mode === 'apply') {
       return card.id === 'water' ? '选择你的相/象，让它获得过河能力' : '选择一枚己方棋子附加护盾';
     }
-    if (!S.skillFrom) return `选择你的${pieceTypeLabel(card)}`;
+    if (!S.skillFrom) {
+      return card.id === 'chongxiang'
+        ? '选择你的相/象，向前冲一格吃子'
+        : `选择你的${pieceTypeLabel(card)}`;
+    }
+    if (card.id === 'chongxiang') return '点击象正前方的敌方棋子';
     return card.id === 'dayun' ? '点击红色射线上的落点' : '点击红色目标位置';
   }
 
@@ -1372,7 +1449,9 @@
     if (active && S.skillFrom && myTurn) {
       const hint = el('div', 'skill-tip', active.id === 'dayun'
         ? '沿任意红色射线点击落点，车会移动到那里并清空路径'
-        : '点击红色高亮格发动');
+        : active.id === 'chongxiang'
+          ? '点击象正前方高亮的敌方棋子，冲过去吃掉它'
+          : '点击红色高亮格发动');
       bar.appendChild(hint);
     }
   }
@@ -1490,6 +1569,15 @@
         const piece = board[row]?.[col];
         if (row >= 0 && row < 10 && col >= 0 && col < 9 && (!piece || piece.color !== own)) push(row, col);
       });
+      return out;
+    }
+    if (card.id === 'chongxiang') {
+      const row = from.row + (own === 'red' ? -1 : 1);
+      const col = from.col;
+      if (row >= 0 && row < 10) {
+        const piece = board[row]?.[col];
+        if (piece && piece.color !== own) push(row, col);
+      }
       return out;
     }
     if (card.id === 'guard') {
@@ -1798,6 +1886,7 @@
     [
       ['房间', S.game.id],
       ['模式', MODE_LABEL[S.game.mode] || S.game.mode],
+      ['可见性', S.game.isPublic === false ? '仅链接' : '公开'],
       ['手数', `${S.game.moveCount} 手`],
       ['行棋', S.game.turn === 'red' ? '红方' : '黑方'],
       ['观战', `${S.game.spectatorCount || 0} 人`],

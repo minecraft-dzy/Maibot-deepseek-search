@@ -219,6 +219,7 @@ app.post('/api/games', requireUser, gameLimiter, (req, res) => {
   if (!['pvp', 'pve', 'aivai', 'skill'].includes(mode)) return res.status(400).json({ error: '未知对局模式' });
   const side = req.body?.side === 'black' ? 'black' : 'red';
   const special = mode === 'pve' && req.body?.special === true;
+  const isPublic = req.body?.isPublic !== false;
   const cleanPrompt = (value, fallback) => {
     const text = String(value == null ? '' : value).replace(/\r\n/g, '\n').trim();
     return text ? text.slice(0, 4000) : fallback;
@@ -228,6 +229,7 @@ app.post('/api/games', requireUser, gameLimiter, (req, res) => {
     user: req.user,
     side,
     special,
+    isPublic,
     redPrompt: cleanPrompt(req.body?.redPrompt, DEFAULT_PROMPTS.red),
     blackPrompt: cleanPrompt(req.body?.blackPrompt, DEFAULT_PROMPTS.black),
   });
@@ -254,6 +256,16 @@ app.post('/api/skills/buy', requireUser, shopLimiter, (req, res) => {
   user.cards[cardId] = Math.max(0, Number(user.cards[cardId]) || 0) + count;
   store.save();
   res.json({ card, count, user: publicUser(user) });
+});
+
+app.post('/api/debug/points', requireUser, debugLimiter, (req, res) => {
+  const user = req.user;
+  const code = String(req.body?.code || '');
+  if (code !== DEBUG_POINTS_CODE) return res.status(403).json({ error: '调试密码不正确' });
+  user.points = Math.max(0, Number(user.points) || 0) + DEBUG_POINTS_REWARD;
+  user.cards = user.cards || {};
+  store.save();
+  res.json({ ok: true, reward: DEBUG_POINTS_REWARD, user: publicUser(user) });
 });
 
 app.post('/api/games/:id/join', requireUser, (req, res) => {

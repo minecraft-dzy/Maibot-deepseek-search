@@ -6,7 +6,9 @@
   <meta name="theme-color" content="#0d1514">
   <meta name="description" content="弈境 · 接入 DeepSeek Flash 的中国象棋对弈平台，支持人机、双人与 AI 对 AI。">
   <title>弈境 · AI 中国象棋</title>
-  <link rel="stylesheet" href="/css/app.css?v=20261028-2">
+  <link rel="icon" type="image/svg+xml" href="/assets/pieces/rK.svg?v=20261028-3">
+  <link rel="shortcut icon" type="image/svg+xml" href="/assets/pieces/rK.svg?v=20261028-3">
+  <link rel="stylesheet" href="/css/app.css?v=20261028-3">
 </head>
 <body>
   <div id="app">
@@ -336,7 +338,7 @@
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12l16-8-6 8 6 8z"/></svg>
               </button>
             </form>
-            <p class="chat-note">消息会触发 AI 的 Planner；AI 不必回应每条消息，也可以互相调侃。请勿发送敏感信息。</p>
+            <p class="chat-note">棋手发言会触发 AI 的 Planner；观众发言只展示给真人。请勿发送敏感信息。</p>
           </div>
 
           <div class="tab-pane" id="tab-moves">
@@ -351,6 +353,6 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/js/app.js?v=20261028-2"></script>
+  <script src="/js/app.js?v=20261028-3"></script>
 </body>
 </html>
