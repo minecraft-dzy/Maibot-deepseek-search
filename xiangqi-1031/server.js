@@ -979,7 +979,7 @@ io.on('connection', (socket) => {
     if (!game || socket.data.joined !== game.id) return ack({ ok: false, error: '对局不存在' });
     const result = service.useSkill(game, user, payload);
     if (!result.ok) return ack({ ok: false, error: result.error });
-    ack({ ok: true, skill: result.skill, cards: result.cards, state: result.state, reveal: result.reveal || null });
+    ack({ ok: true, skill: result.skill, cards: result.cards, state: result.state, reveal: result.reveal || null, revealCards: result.revealCards || [] });
   });
 
   socket.on('resign', (payload, ack) => {

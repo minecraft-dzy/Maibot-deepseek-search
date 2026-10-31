@@ -3657,6 +3657,66 @@
     });
   }
 
+  function openScoutModal(response) {
+    const root = $('#modal-root');
+    if (!root) return;
+    const cards = Array.isArray(response?.revealCards) ? response.revealCards : [];
+    const total = cards.reduce((sum, item) => sum + (Number(item.count) || 0), 0);
+    const panel = el('div', 'modal-card scout-modal-card');
+    const head = el('div', 'modal-head scout-head');
+    const headText = el('div');
+    headText.appendChild(el('h2', '', '探底细'));
+    headText.appendChild(el('p', '', `${response?.opponentName || '对方'}当前持有的全部卡牌 · 仅你可见`));
+    head.appendChild(headText);
+    const close = el('button', 'modal-close', '×');
+    close.type = 'button';
+    close.setAttribute('aria-label', '关闭');
+    close.addEventListener('click', closeModal);
+    head.appendChild(close);
+    panel.appendChild(head);
+
+    const body = el('div', 'modal-body scout-body');
+    if (!cards.length) {
+      const empty = el('div', 'scout-empty');
+      empty.appendChild(el('span', 'scout-empty-seal', '无'));
+      empty.appendChild(el('p', '', '对方手上没有卡牌，底细一览无余。'));
+      body.appendChild(empty);
+    } else {
+      const caption = el('div', 'scout-caption');
+      caption.appendChild(el('span', 'scout-caption-main', `共 ${total} 张卡牌`));
+      caption.appendChild(el('span', 'scout-caption-sub', `${cards.length} 种 · 结果随对方用卡实时变化`));
+      body.appendChild(caption);
+      const grid = el('div', 'scout-reveal-grid');
+      cards.forEach((item, index) => {
+        const tile = el('div', 'scout-card');
+        applyCardTheme(tile, item);
+        tile.style.setProperty('--delay', `${index * 55}ms`);
+        if (item.description) tile.title = item.description;
+        tile.appendChild(buildCardArt(item, 'skill'));
+        tile.appendChild(el('span', 'scout-count', `×${item.count}`));
+        const info = el('div', 'scout-card-info');
+        info.appendChild(el('span', 'scout-card-name', item.name));
+        info.appendChild(el('span', 'scout-card-rarity', item.rarity || '卡牌'));
+        tile.appendChild(info);
+        grid.appendChild(tile);
+      });
+      body.appendChild(grid);
+    }
+    panel.appendChild(body);
+
+    const foot = el('div', 'modal-foot scout-foot');
+    foot.appendChild(el('span', 'tiny-note', '探查结果仅你可见，对方不会收到提示'));
+    const done = el('button', 'btn btn-primary', '知道了');
+    done.type = 'button';
+    done.addEventListener('click', closeModal);
+    foot.appendChild(done);
+    panel.appendChild(foot);
+
+    clear(root);
+    root.appendChild(panel);
+    show(root, true);
+  }
+
   function fireSkill(card, payload) {
     if (!S.socket || !S.game) return;
     S.socket.emit('use_skill', { gameId: S.gameId, cardId: card.id, ...payload }, (response) => {
@@ -3690,7 +3750,7 @@
       else if (card.id === 'drop') toast('奇兵已空投到场');
       else if (card.id === 'borrow') toast(count > 0 ? `借东风：吃掉 ${count} 枚棋子` : '借东风发动');
       else if (card.id === 'fire') toast(`火攻：烧毁 ${count} 枚棋子`);
-      else if (card.id === 'scout') toast(`探底细：${response.reveal || '对方无卡牌'}`);
+      else if (card.id === 'scout') openScoutModal(response);
       else if (count > 0) toast(`「${entry.name || card.name}」发动，吃掉 ${count} 枚棋子`);
       else toast(`「${entry.name || card.name}」发动成功`);
     });

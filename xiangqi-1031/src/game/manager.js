@@ -1539,13 +1539,27 @@ class GameService {
 
   useScout(game, user, card, color) {
     const opponent = color === X.RED ? X.BLACK : X.RED;
-    const reveal = `${X.SIDE_NAMES[opponent]}当前卡牌：${this.cardListText(this.opponentCardsFor(game, color))}`;
+    const owned = this.opponentCardsFor(game, color);
+    const revealCards = Object.entries(owned || {})
+      .filter(([, count]) => Number(count) > 0)
+      .map(([id, count]) => {
+        const meta = cardById(id);
+        return {
+          id,
+          count: Number(count),
+          name: meta ? meta.name : id,
+          rarity: meta ? meta.rarity : '',
+          price: meta ? meta.price : 0,
+          description: meta ? meta.description : '',
+        };
+      });
+    const reveal = `${X.SIDE_NAMES[opponent]}当前卡牌：${this.cardListText(owned)}`;
     const entry = this.makeSkillEntry(color, card, {
       summary: `探查了${X.SIDE_NAMES[opponent]}的当前卡牌（内容仅自己可见）`,
     });
     const result = this.commitSkill(game, user, color, card, entry, true, { silent: true });
     if (!result.ok) return result;
-    return { ...result, reveal };
+    return { ...result, reveal, revealCards, opponentName: X.SIDE_NAMES[opponent] };
   }
 
   useExtra(game, user, card, color) {
