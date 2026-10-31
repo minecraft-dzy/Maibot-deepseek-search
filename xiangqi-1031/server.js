@@ -674,6 +674,187 @@ function markPresence(game, user, delta) {
   service.broadcast(game);
 }
 
+function dmThreadKey(a, b) {
+  return [a, b].sort().join(':');
+}
+
+function socialView(user, viewerId) {
+  const unread = dmUnreadFor(viewerId, user.id);
+  return {
+    id: user.id,
+    username: user.username,
+    online: onlineUsers.has(user.id),
+    lastSeen: user.lastSeen || null,
+    unread,
+  };
+}
+
+function dmUnreadFor(userId, friendId) {
+  const key = dmThreadKey(userId, friendId);
+  const list = store.messages[key] || [];
+  return list.filter((m) => m.to === userId && !m.read).length;
+}
+
+function dmUnreadTotal(userId) {
+  let total = 0;
+  const byFriend = {};
+  Object.values(store.messages).forEach((list) => {
+    if (!Array.isArray(list)) return;
+    list.forEach((m) => {
+      if (m.to !== userId || m.read) return;
+      total += 1;
+      byFriend[m.from] = (byFriend[m.from] || 0) + 1;
+    });
+  });
+  return { total, byFriend };
+}
+
+function friendListFor(user) {
+  return (user.friends || [])
+    .map((id) => store.userById(id))
+    .filter(Boolean)
+    .map((friend) => socialView(friend, user.id))
+    .sort((a, b) => (b.online - a.online) || a.username.localeCompare(b.username));
+}
+
+function emitToFriends(userId, event, payload) {
+  const user = store.userById(userId);
+  if (!user) return;
+  (user.friends || []).forEach((friendId) => {
+    io.to(`user:${friendId}`).emit(event, payload);
+  });
+}
+
+function appendDm(fromUser, toUser, text, extra = {}) {
+  const key = dmThreadKey(fromUser.id, toUser.id);
+  const list = Array.isArray(store.messages[key]) ? store.messages[key] : [];
+  const message = {
+    id: `m_${crypto.randomBytes(6).toString('hex')}`,
+    from: fromUser.id,
+    to: toUser.id,
+    text,
+    at: new Date().toISOString(),
+    read: false,
+    ...extra,
+  };
+  list.push(message);
+  if (list.length > 200) list.splice(0, list.length - 200);
+  store.messages[key] = list;
+  return message;
+}
+
+function bindSocialHandlers(socket, user) {
+  socket.on('friend:list', (ack) => {
+    if (typeof ack !== 'function') return;
+    const unread = dmUnreadTotal(user.id);
+    ack({
+      ok: true,
+      friends: friendListFor(user),
+      totalUnread: unread.total,
+      unreadByFriend: unread.byFriend,
+    });
+  });
+
+  socket.on('friend:add', (payload, ack) => {
+    if (typeof ack !== 'function') ack = () => {};
+    const name = normalizeUsername(payload?.username);
+    const target = name ? store.userByName(name) : null;
+    if (!target) return ack({ ok: false, error: '未找到该用户名' });
+    if (target.id === user.id) return ack({ ok: false, error: '不能添加自己为好友' });
+    user.friends = Array.isArray(user.friends) ? user.friends : [];
+    target.friends = Array.isArray(target.friends) ? target.friends : [];
+    if (user.friends.includes(target.id)) return ack({ ok: false, error: '你们已经是好友了' });
+    if (user.friends.length >= 100) return ack({ ok: false, error: '好友数量已达上限' });
+    user.friends.push(target.id);
+    if (!target.friends.includes(user.id)) target.friends.push(user.id);
+    store.save();
+    io.to(`user:${target.id}`).emit('friend:added', { user: socialView(user, target.id) });
+    ack({ ok: true, friend: socialView(target, user.id), friends: friendListFor(user) });
+  });
+
+  socket.on('friend:history', (payload, ack) => {
+    if (typeof ack !== 'function') ack = () => {};
+    const friendId = String(payload?.friendId || '');
+    const friend = store.userById(friendId);
+    if (!friend || !(user.friends || []).includes(friendId)) return ack({ ok: false, error: '好友不存在' });
+    const key = dmThreadKey(user.id, friendId);
+    const list = Array.isArray(store.messages[key]) ? store.messages[key] : [];
+    let changed = false;
+    list.forEach((m) => {
+      if (m.to === user.id && !m.read) {
+        m.read = true;
+        changed = true;
+      }
+    });
+    if (changed) store.save();
+    ack({ ok: true, friend: socialView(friend, user.id), messages: list });
+  });
+
+  socket.on('friend:message', (payload, ack) => {
+    if (typeof ack !== 'function') ack = () => {};
+    const friendId = String(payload?.friendId || '');
+    const friend = store.userById(friendId);
+    if (!friend || !(user.friends || []).includes(friendId)) return ack({ ok: false, error: '好友不存在' });
+    const text = String(payload?.text || '').trim();
+    if (!text) return ack({ ok: false, error: '消息不能为空' });
+    if (text.length > 500) return ack({ ok: false, error: '消息过长' });
+    const now = Date.now();
+    socket.data.friendWindow = (socket.data.friendWindow || []).filter((t) => now - t < 10000);
+    if (socket.data.friendWindow.length >= 10) return ack({ ok: false, error: '发送过快，请稍后再试' });
+    socket.data.friendWindow.push(now);
+    const message = appendDm(user, friend, text);
+    store.save();
+    io.to(`user:${friend.id}`).emit('friend:message', {
+      message,
+      friend: socialView(user, friend.id),
+    });
+    ack({ ok: true, message });
+  });
+
+  socket.on('friend:invite', (payload, ack) => {
+    if (typeof ack !== 'function') ack = () => {};
+    const friendId = String(payload?.friendId || '');
+    const friend = store.userById(friendId);
+    if (!friend || !(user.friends || []).includes(friendId)) return ack({ ok: false, error: '好友不存在' });
+    const gameId = String(payload?.gameId || socket.data.joined || '').toUpperCase();
+    const game = store.gameById(gameId);
+    if (!game) return ack({ ok: false, error: '对局不存在' });
+    const involved = game.creatorId === user.id || game.red?.userId === user.id || game.black?.userId === user.id;
+    if (!involved) return ack({ ok: false, error: '你不在该对局中' });
+    if (!onlineUsers.has(friend.id)) return ack({ ok: false, error: '好友当前不在线' });
+    io.to(`user:${friend.id}`).emit('friend:invite', {
+      gameId,
+      mode: game.mode,
+      from: { id: user.id, username: user.username },
+    });
+    ack({ ok: true });
+  });
+
+  socket.on('friend:gift-card', (payload, ack) => {
+    if (typeof ack !== 'function') ack = () => {};
+    const friendId = String(payload?.friendId || '');
+    const friend = store.userById(friendId);
+    if (!friend || !(user.friends || []).includes(friendId)) return ack({ ok: false, error: '好友不存在' });
+    const card = cardById(String(payload?.cardId || ''));
+    if (!card) return ack({ ok: false, error: '卡牌不存在' });
+    user.cards = user.cards && typeof user.cards === 'object' ? user.cards : {};
+    if (Number(user.cards[card.id]) <= 0) return ack({ ok: false, error: '你没有这张卡牌' });
+    user.cards[card.id] = Number(user.cards[card.id]) - 1;
+    if (!user.cards[card.id]) delete user.cards[card.id];
+    friend.cards = friend.cards && typeof friend.cards === 'object' ? friend.cards : {};
+    friend.cards[card.id] = (Number(friend.cards[card.id]) || 0) + 1;
+    const message = appendDm(user, friend, `送你一张「${card.name}」`, { kind: 'card', cardId: card.id });
+    store.save();
+    io.to(`user:${friend.id}`).emit('friend:card', {
+      card: { id: card.id, name: card.name, price: card.price },
+      message,
+      friend: socialView(user, friend.id),
+    });
+    io.to(`user:${friend.id}`).emit('user:update', { user: publicUser(friend) });
+    ack({ ok: true, user: publicUser(user), card: { id: card.id, name: card.name } });
+  });
+}
+
 io.use((socket, next) => {
   const user = socketUser(store, socket);
   if (!user) return next(new Error('未登录'));
@@ -685,15 +866,36 @@ io.use((socket, next) => {
 
 io.on('connection', (socket) => {
   const user = socket.data.user;
-  if (!onlineUsers.has(user.id)) onlineUsers.set(user.id, new Set());
+  const wasOffline = !onlineUsers.has(user.id);
+  if (wasOffline) onlineUsers.set(user.id, new Set());
   onlineUsers.get(user.id).add(socket.id);
+  socket.join(`user:${user.id}`);
+  bindSocialHandlers(socket, user);
   user.lastSeen = new Date().toISOString();
   store.save();
+  if (wasOffline) {
+    emitToFriends(user.id, 'friend:presence', {
+      userId: user.id,
+      username: user.username,
+      online: true,
+      lastSeen: user.lastSeen,
+    });
+  }
   socket.on('disconnect', () => {
     const sockets = onlineUsers.get(user.id);
     if (!sockets) return;
     sockets.delete(socket.id);
-    if (!sockets.size) onlineUsers.delete(user.id);
+    if (!sockets.size) {
+      onlineUsers.delete(user.id);
+      user.lastSeen = new Date().toISOString();
+      store.save();
+      emitToFriends(user.id, 'friend:presence', {
+        userId: user.id,
+        username: user.username,
+        online: false,
+        lastSeen: user.lastSeen,
+      });
+    }
   });
 
   socket.on('join_game', (payload, ack) => {
@@ -754,6 +956,20 @@ io.on('connection', (socket) => {
     if (socket.data.chatWindow.length >= 8) return ack({ ok: false, error: '发言过快，请稍后再试' });
     socket.data.chatWindow.push(now);
     const message = service.addChat(game, user, text, 'player');
+    if (game.mode === 'pvp' || game.mode === 'skill') {
+      const targets = new Set(
+        [game.red?.userId, game.black?.userId].filter((id) => id && id !== user.id),
+      );
+      targets.forEach((id) => {
+        io.to(`user:${id}`).emit('game:chat-notice', {
+          gameId: game.id,
+          mode: game.mode,
+          fromName: user.username,
+          text,
+          at: message?.at || new Date().toISOString(),
+        });
+      });
+    }
     ack({ ok: true, message });
   });
 

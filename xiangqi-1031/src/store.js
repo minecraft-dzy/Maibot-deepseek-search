@@ -29,10 +29,12 @@ class Store {
     data.version = data.version || 1;
     data.users = data.users || {};
     data.games = data.games || {};
+    data.messages = data.messages && typeof data.messages === 'object' ? data.messages : {};
     Object.values(data.users).forEach((user) => {
       if (!user) return;
       user.points = Math.max(0, Math.min(Number.MAX_SAFE_INTEGER, Math.floor(Number(user.points) || 0)));
       if (!user.cards || typeof user.cards !== 'object') user.cards = {};
+      if (!Array.isArray(user.friends)) user.friends = [];
     });
     Object.values(data.games).forEach((game) => {
       if (!game) return;
@@ -60,6 +62,10 @@ class Store {
 
   get games() {
     return this.data.games;
+  }
+
+  get messages() {
+    return this.data.messages;
   }
 
   userByName(username) {

@@ -2694,3 +2694,202 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }
+
+/* 顶部置顶消息横幅 */
+.global-banner {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(680px, calc(100vw - 28px));
+  padding: 10px 12px 10px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(233, 205, 148, 0.4);
+  background: linear-gradient(135deg, rgba(22, 40, 35, 0.97), rgba(12, 24, 21, 0.97));
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+  color: #f2ead6;
+  font-size: 13px;
+  animation: bannerIn 0.24s ease;
+}
+.global-banner.tone-friend { border-color: rgba(120, 210, 180, 0.5); }
+.global-banner.tone-game { border-color: rgba(255, 190, 120, 0.5); }
+.global-banner.tone-warn { border-color: rgba(226, 138, 124, 0.6); }
+.global-banner-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+  background: #e9cd94;
+  box-shadow: 0 0 10px rgba(233, 205, 148, 0.8);
+}
+.global-banner.tone-friend .global-banner-dot { background: #7fd7b2; box-shadow: 0 0 10px rgba(127, 215, 178, 0.8); }
+.global-banner.tone-game .global-banner-dot { background: #ffbe78; box-shadow: 0 0 10px rgba(255, 190, 120, 0.8); }
+.global-banner-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.global-banner-action {
+  flex: none;
+  border: 1px solid rgba(233, 205, 148, 0.45);
+  background: rgba(233, 205, 148, 0.12);
+  color: #ffe7b8;
+  border-radius: 9px;
+  padding: 5px 11px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.global-banner-action:hover { background: rgba(233, 205, 148, 0.22); }
+.global-banner-close {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: #9fb3a9;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+@keyframes bannerIn {
+  from { opacity: 0; transform: translate(-50%, -10px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.friend-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 17px;
+  height: 17px;
+  margin-left: 5px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: #c9564a;
+  color: #fff4ec;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* 好友与私聊 */
+.friends-modal-card { width: min(640px, calc(100vw - 28px)); }
+.friends-add-row { display: flex; gap: 8px; margin-bottom: 14px; }
+.friends-add-row input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid rgba(233, 205, 148, 0.22);
+  background: rgba(7, 15, 14, 0.65);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 9px 12px;
+  font-size: 13px;
+}
+.friends-hint { min-height: 18px; margin: 0 0 10px; font-size: 12px; color: #e28a7c; }
+.friend-list { display: flex; flex-direction: column; gap: 8px; max-height: 48vh; overflow: auto; padding-right: 2px; }
+.friend-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+}
+.friend-row.is-online { border-color: rgba(127, 215, 178, 0.28); }
+.friend-avatar {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #27473d, #152a24);
+  color: #e9cd94;
+  font-size: 15px;
+  font-weight: 700;
+}
+.friend-main { flex: 1; min-width: 0; cursor: pointer; }
+.friend-name { display: flex; align-items: center; gap: 7px; color: #f2ead6; font-size: 14px; }
+.friend-name .presence-dot { width: 7px; height: 7px; border-radius: 50%; background: #5c6b64; }
+.friend-name .presence-dot.online { background: #7fd7b2; box-shadow: 0 0 8px rgba(127, 215, 178, 0.8); }
+.friend-meta { margin-top: 3px; font-size: 11px; color: var(--muted); }
+.friend-unread {
+  flex: none;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #c9564a;
+  color: #fff4ec;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.friend-actions { display: flex; gap: 6px; flex: none; }
+.friend-actions .mini-btn { font-size: 11px; padding: 5px 9px; }
+.friend-empty { padding: 26px 8px; text-align: center; color: var(--muted); font-size: 13px; }
+.friend-chat-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.friend-chat-head .mini-btn { flex: none; }
+.friend-chat-title { flex: 1; min-width: 0; }
+.friend-chat-title strong { display: block; color: #f2ead6; font-size: 15px; }
+.friend-chat-title span { font-size: 11px; color: var(--muted); }
+.friend-chat-scroll {
+  height: min(42vh, 340px);
+  overflow: auto;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.friend-msg { display: flex; flex-direction: column; max-width: 78%; }
+.friend-msg.mine { align-self: flex-end; align-items: flex-end; }
+.friend-msg.theirs { align-self: flex-start; align-items: flex-start; }
+.friend-msg-bubble {
+  padding: 8px 11px;
+  border-radius: 11px;
+  background: rgba(127, 215, 178, 0.14);
+  color: #e9f3ec;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.friend-msg.mine .friend-msg-bubble { background: rgba(233, 205, 148, 0.16); color: #fbefd7; }
+.friend-msg-time { margin-top: 3px; font-size: 10px; color: var(--muted); }
+.friend-chat-form { display: flex; gap: 8px; margin-top: 10px; }
+.friend-chat-form input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid rgba(233, 205, 148, 0.22);
+  background: rgba(7, 15, 14, 0.65);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 9px 12px;
+  font-size: 13px;
+}
+.friend-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.friend-card-option {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(233, 205, 148, 0.2);
+  background: rgba(233, 205, 148, 0.06);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+.friend-card-option strong { font-size: 13px; color: #ffe7b8; }
+.friend-card-option span { font-size: 11px; color: var(--muted); }
+.friend-card-option:hover { background: rgba(233, 205, 148, 0.14); }
+
+@media (max-width: 640px) {
+  .global-banner { top: 8px; padding: 8px 10px; font-size: 12px; }
+  .friend-actions { flex-direction: column; }
+  .friends-modal-card { width: calc(100vw - 20px); }
+}

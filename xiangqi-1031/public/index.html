@@ -8,10 +8,16 @@
   <title>弈境 · AI 中国象棋</title>
   <link rel="icon" type="image/svg+xml" href="/assets/pieces/rK.svg?v=20261028-3">
   <link rel="shortcut icon" type="image/svg+xml" href="/assets/pieces/rK.svg?v=20261028-3">
-  <link rel="stylesheet" href="/css/app.css?v=20261030-6">
+  <link rel="stylesheet" href="/css/app.css?v=20261031-1">
 </head>
 <body>
   <div id="app">
+    <div id="global-banner" class="global-banner hidden" role="status" aria-live="polite">
+      <span class="global-banner-dot" aria-hidden="true"></span>
+      <span class="global-banner-text" id="global-banner-text"></span>
+      <button class="global-banner-action" id="global-banner-action" type="button">查看</button>
+      <button class="global-banner-close" id="global-banner-close" type="button" aria-label="关闭">×</button>
+    </div>
     <div id="auth-screen" class="screen auth-screen">
       <section class="auth-visual" aria-hidden="true">
         <div class="auth-aura"></div>
@@ -86,6 +92,7 @@
         </a>
         <div class="header-right">
           <button class="shop-entry" id="open-shop" type="button">技能商店 <b id="header-points">0</b></button>
+          <button class="btn btn-ghost btn-compact" id="open-friends" type="button">好友<span class="friend-badge hidden" id="friend-badge">0</span></button>
           <button class="btn btn-ghost btn-compact" id="open-redeem" type="button">兑换码</button>
           <button class="btn btn-ghost btn-compact hidden" id="open-admin" type="button">管理台</button>
           <span class="model-pill"><span class="status-dot"></span> DeepSeek Flash</span>
@@ -286,6 +293,8 @@
           </div>
         </div>
         <div class="game-header-actions">
+          <button class="btn btn-compact btn-ghost" id="open-friends-game" type="button">好友<span class="friend-badge hidden" id="friend-badge-game">0</span></button>
+          <button class="btn btn-compact btn-ghost" id="invite-friend" type="button">邀请好友</button>
           <button class="btn btn-compact btn-ghost" id="flip-board" title="翻转棋盘">翻转</button>
           <button class="btn btn-compact btn-ghost" id="copy-invite">复制观战链接</button>
           <button class="btn btn-compact btn-ghost hidden" id="game-shop" title="技能商店">商店</button>
@@ -429,6 +438,6 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/js/app.js?v=20261030-7"></script>
+  <script src="/js/app.js?v=20261031-1"></script>
 </body>
 </html>

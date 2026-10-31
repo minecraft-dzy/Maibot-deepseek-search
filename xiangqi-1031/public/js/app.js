@@ -45,6 +45,17 @@
     resultAnnounced: false,
     health: null,
     lastStateAt: 0,
+    friends: {
+      list: [],
+      unread: 0,
+      byFriend: {},
+      activeId: null,
+      messages: [],
+      loading: false,
+      error: '',
+    },
+    bannerTimer: null,
+    bannerAction: null,
   };
 
   const PIECE_MAP = { K: 'K', A: 'A', E: 'B', H: 'N', R: 'R', C: 'C', P: 'P', W: 'W' };
@@ -338,6 +349,523 @@
     }, 3400);
   }
 
+  function hideBanner() {
+    clearTimeout(S.bannerTimer);
+    S.bannerTimer = null;
+    S.bannerKind = null;
+    S.bannerAction = null;
+    show($('#global-banner'), false);
+  }
+
+  function showBanner({ text, actionText = '查看', onClick = null, tone = '', sticky = false, kind = '' }) {
+    clearTimeout(S.bannerTimer);
+    S.bannerKind = kind;
+    S.bannerAction = onClick;
+    const bar = $('#global-banner');
+    const label = $('#global-banner-text');
+    const action = $('#global-banner-action');
+    if (!bar || !label || !action) return;
+    label.textContent = text;
+    action.textContent = actionText;
+    show(action, !!(onClick && actionText));
+    bar.classList.remove('tone-friend', 'tone-game', 'tone-warn');
+    if (tone) bar.classList.add(`tone-${tone}`);
+    show(bar, true);
+    if (!sticky) {
+      S.bannerTimer = setTimeout(hideBanner, 6000);
+    }
+  }
+
+  function updateFriendBadges() {
+    const unread = Math.max(0, Number(S.friends.unread) || 0);
+    ['#friend-badge', '#friend-badge-game'].forEach((sel) => {
+      const badge = $(sel);
+      if (!badge) return;
+      badge.textContent = unread > 99 ? '99+' : String(unread);
+      show(badge, unread > 0);
+    });
+  }
+
+  function friendById(friendId) {
+    return S.friends.list.find((friend) => friend.id === friendId) || null;
+  }
+
+  function friendStatusText(friend) {
+    if (!friend) return '';
+    if (friend.online) return '在线';
+    if (!friend.lastSeen) return '离线';
+    const diff = Date.now() - new Date(friend.lastSeen).getTime();
+    if (!Number.isFinite(diff) || diff < 0) return '离线';
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return '刚刚离线';
+    if (mins < 60) return `${mins} 分钟前在线`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours} 小时前在线`;
+    return `${Math.floor(hours / 24)} 天前在线`;
+  }
+
+  function formatDmTime(at) {
+    const date = new Date(at);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function applyFriendSnapshot(data) {
+    if (!data || !data.ok) return;
+    S.friends.list = Array.isArray(data.friends) ? data.friends : [];
+    S.friends.byFriend = data.unreadByFriend || {};
+    S.friends.unread = Number(data.totalUnread) || 0;
+    updateFriendBadges();
+    if (S.friends.unread === 0 && S.bannerKind === 'unread') hideBanner();
+  }
+
+  function friendsModalOpen() {
+    const root = $('#modal-root');
+    return !!root && !root.classList.contains('hidden') && !!$('.friends-modal-card', root);
+  }
+
+  function refreshFriends(options = {}) {
+    if (!S.socket || !S.socket.connected) return;
+    S.socket.emit('friend:list', (data) => {
+      if (!data || !data.ok) return;
+      applyFriendSnapshot(data);
+      if (options.notifyUnread && S.friends.unread > 0) {
+        const first = Object.keys(S.friends.byFriend)[0] || null;
+        showBanner({
+          text: `收到 ${S.friends.unread} 条消息`,
+          actionText: '查看好友',
+          tone: 'friend',
+          sticky: true,
+          kind: 'unread',
+          onClick: () => openFriendsModal(first),
+        });
+      }
+      if (friendsModalOpen()) {
+        if (!S.friends.activeId) renderFriendsModal(true);
+        else if (!S.friends.loading) renderFriendsModal(false);
+      }
+    });
+  }
+
+  function openFriendsModal(friendId = null) {
+    S.friends.activeId = friendId || null;
+    S.friends.messages = [];
+    S.friends.error = '';
+    S.friends.loading = !!friendId;
+    renderFriendsModal(true);
+    show($('#modal-root'), true);
+    refreshFriends();
+    if (friendId) loadFriendHistory(friendId);
+  }
+
+  function loadFriendHistory(friendId) {
+    if (!S.socket || !S.socket.connected) return;
+    S.friends.activeId = friendId;
+    S.friends.loading = true;
+    S.friends.error = '';
+    S.socket.emit('friend:history', { friendId }, (data) => {
+      S.friends.loading = false;
+      if (!data || !data.ok) {
+        S.friends.error = data?.error || '聊天记录加载失败';
+        renderFriendsModal(true);
+        return;
+      }
+      S.friends.messages = data.messages || [];
+      const friend = friendById(friendId) || data.friend;
+      if (friend) {
+        friend.unread = 0;
+        const was = Number(S.friends.byFriend[friendId]) || 0;
+        S.friends.unread = Math.max(0, S.friends.unread - was);
+        delete S.friends.byFriend[friendId];
+        updateFriendBadges();
+      }
+      if (S.friends.unread === 0 && S.bannerKind === 'unread') hideBanner();
+      renderFriendsModal(true);
+    });
+  }
+
+  function renderFriendsModal(preserveInput = false) {
+    if (S.screen === 'auth') return;
+    const root = $('#modal-root');
+    const previous = preserveInput ? $('#friend-chat-input')?.value : '';
+    clear(root);
+    const card = el('div', 'modal-card friends-modal-card');
+    const head = el('div', 'modal-head');
+    const headText = el('div');
+    headText.appendChild(el('h2', '', '好友'));
+    headText.appendChild(el('p', '', '按用户名添加好友，离线消息会在再次上线时提醒。'));
+    head.appendChild(headText);
+    const close = el('button', 'modal-close', '×');
+    close.type = 'button';
+    close.setAttribute('aria-label', '关闭');
+    close.addEventListener('click', () => {
+      S.friends.activeId = null;
+      closeModal();
+    });
+    head.appendChild(close);
+    card.appendChild(head);
+
+    const body = el('div', 'modal-body');
+    if (S.friends.activeId) {
+      body.appendChild(renderFriendChatPane(S.friends.activeId));
+    } else {
+      const row = el('div', 'friends-add-row');
+      const input = el('input');
+      input.placeholder = '输入用户名添加好友';
+      input.maxLength = 16;
+      input.autocomplete = 'off';
+      const add = el('button', 'btn btn-primary btn-compact', '添加');
+      add.type = 'button';
+      add.addEventListener('click', () => addFriendByUsername(input, hint));
+      input.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          addFriendByUsername(input, hint);
+        }
+      });
+      row.appendChild(input);
+      row.appendChild(add);
+      body.appendChild(row);
+      const hint = el('p', 'friends-hint', S.friends.error || '');
+      body.appendChild(hint);
+
+      if (!S.friends.list.length) {
+        body.appendChild(el('div', 'friend-empty', '还没有好友。输入用户名，添加第一位棋友。'));
+      } else {
+        const list = el('div', 'friend-list');
+        S.friends.list.forEach((friend) => {
+          const item = el('div', `friend-row${friend.online ? ' is-online' : ''}`);
+          item.appendChild(el('div', 'friend-avatar', friend.username.slice(0, 1).toUpperCase()));
+          const main = el('div', 'friend-main');
+          const name = el('div', 'friend-name');
+          const dot = el('span', `presence-dot${friend.online ? ' online' : ''}`);
+          name.appendChild(dot);
+          name.appendChild(document.createTextNode(friend.username));
+          main.appendChild(name);
+          main.appendChild(el('div', 'friend-meta', friendStatusText(friend)));
+          main.addEventListener('click', () => loadFriendHistory(friend.id));
+          item.appendChild(main);
+          if (friend.unread) item.appendChild(el('span', 'friend-unread', String(friend.unread)));
+          const actions = el('div', 'friend-actions');
+          const chat = el('button', 'mini-btn', '聊天');
+          chat.type = 'button';
+          chat.addEventListener('click', () => loadFriendHistory(friend.id));
+          actions.appendChild(chat);
+          const invite = el('button', 'mini-btn', '邀请');
+          invite.type = 'button';
+          invite.addEventListener('click', () => inviteFriend(friend));
+          actions.appendChild(invite);
+          const gift = el('button', 'mini-btn', '送卡');
+          gift.type = 'button';
+          gift.addEventListener('click', () => openGiftCardModal(friend));
+          actions.appendChild(gift);
+          item.appendChild(actions);
+          list.appendChild(item);
+        });
+        body.appendChild(list);
+      }
+    }
+    card.appendChild(body);
+    root.appendChild(card);
+    show(root, true);
+    if (previous) {
+      const chatInput = $('#friend-chat-input');
+      if (chatInput) {
+        chatInput.value = previous;
+        chatInput.focus();
+      }
+    }
+  }
+
+  function renderFriendChatPane(friendId) {
+    const friend = friendById(friendId) || { id: friendId, username: '好友', online: false, lastSeen: null };
+    const wrap = el('div', 'friend-chat-pane');
+    const head = el('div', 'friend-chat-head');
+    const back = el('button', 'mini-btn', '返回');
+    back.type = 'button';
+    back.addEventListener('click', () => {
+      S.friends.activeId = null;
+      S.friends.messages = [];
+      renderFriendsModal(true);
+    });
+    head.appendChild(back);
+    const title = el('div', 'friend-chat-title');
+    title.appendChild(el('strong', '', friend.username));
+    title.appendChild(el('span', '', friendStatusText(friend)));
+    head.appendChild(title);
+    const gift = el('button', 'mini-btn', '送卡');
+    gift.type = 'button';
+    gift.addEventListener('click', () => openGiftCardModal(friend));
+    head.appendChild(gift);
+    const invite = el('button', 'mini-btn', '邀请对局');
+    invite.type = 'button';
+    invite.addEventListener('click', () => inviteFriend(friend));
+    head.appendChild(invite);
+    wrap.appendChild(head);
+
+    const scroll = el('div', 'friend-chat-scroll');
+    scroll.id = 'friend-chat-scroll';
+    S.friends.messages.forEach((message) => {
+      const mine = message.from === S.user?.id;
+      const line = el('div', `friend-msg ${mine ? 'mine' : 'theirs'}`);
+      line.appendChild(el('div', 'friend-msg-bubble', message.text));
+      line.appendChild(el('div', 'friend-msg-time', formatDmTime(message.at)));
+      scroll.appendChild(line);
+    });
+    if (S.friends.loading) scroll.appendChild(el('div', 'friend-empty', '正在加载聊天记录…'));
+    else if (!S.friends.messages.length) scroll.appendChild(el('div', 'friend-empty', '还没有消息，打个招呼吧。'));
+    wrap.appendChild(scroll);
+
+    const form = el('form', 'friend-chat-form');
+    const input = el('input');
+    input.id = 'friend-chat-input';
+    input.maxLength = 500;
+    input.autocomplete = 'off';
+    input.placeholder = `给 ${friend.username} 发消息…`;
+    const send = el('button', 'btn btn-primary btn-compact', '发送');
+    send.type = 'submit';
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const text = input.value.trim();
+      if (!text) return;
+      S.socket.emit('friend:message', { friendId, text }, (data) => {
+        if (!data || !data.ok) return toast(data?.error || '发送失败', 'error');
+        S.friends.messages.push(data.message);
+        renderFriendsModal(true);
+      });
+    });
+    form.appendChild(input);
+    form.appendChild(send);
+    wrap.appendChild(form);
+    setTimeout(() => {
+      scroll.scrollTop = scroll.scrollHeight;
+      input.focus();
+    }, 30);
+    return wrap;
+  }
+
+  function addFriendByUsername(input, hint) {
+    const username = input.value.trim();
+    if (!username) {
+      hint.textContent = '请输入用户名';
+      return;
+    }
+    S.socket.emit('friend:add', { username }, (data) => {
+      if (!data || !data.ok) {
+        S.friends.error = data?.error || '添加失败';
+        hint.textContent = S.friends.error;
+        return;
+      }
+      S.friends.error = '';
+      input.value = '';
+      hint.textContent = `已添加 ${data.friend.username}`;
+      hint.style.color = '#a8cbb9';
+      refreshFriends();
+    });
+  }
+
+  function inviteFriend(friend) {
+    if (!S.gameId) return toast('请先进入一个对局，再邀请好友', 'error');
+    S.socket.emit('friend:invite', { friendId: friend.id, gameId: S.gameId }, (data) => {
+      if (!data || !data.ok) return toast(data?.error || '邀请失败', 'error');
+      toast(`已邀请 ${friend.username} 进入对局`, 'success');
+    });
+  }
+
+  function openGiftCardModal(friend) {
+    if (!S.shop && !S.lobby?.shop) {
+      loadSkillCatalog().then(() => openGiftCardModal(friend));
+      return;
+    }
+    const cards = (S.shop || S.lobby?.shop || []);
+    const owned = cards.filter((card) => Number((S.user?.cards || {})[card.id]) > 0);
+    const root = $('#modal-root');
+    const cardPanel = el('div', 'modal-card');
+    const head = el('div', 'modal-head');
+    const headText = el('div');
+    headText.appendChild(el('h2', '', '发送卡片'));
+    headText.appendChild(el('p', '', `选择一张卡牌赠送给 ${friend.username}，送出后立即到账。`));
+    head.appendChild(headText);
+    const close = el('button', 'modal-close', '×');
+    close.type = 'button';
+    close.setAttribute('aria-label', '关闭');
+    close.addEventListener('click', () => {
+      S.friends.activeId = null;
+      closeModal();
+    });
+    head.appendChild(close);
+    cardPanel.appendChild(head);
+    const body = el('div', 'modal-body');
+    if (!owned.length) {
+      body.appendChild(el('div', 'friend-empty', '你还没有可赠送的卡牌，先去技能商店购买。'));
+    } else {
+      const grid = el('div', 'friend-card-grid');
+      owned.forEach((item) => {
+        const option = el('button', 'friend-card-option');
+        option.type = 'button';
+        option.appendChild(el('strong', '', item.name));
+        option.appendChild(el('span', '', `持有 ${S.user.cards[item.id]} 张 · ${item.price} 分`));
+        option.addEventListener('click', () => {
+          S.socket.emit('friend:gift-card', { friendId: friend.id, cardId: item.id }, (data) => {
+            if (!data || !data.ok) return toast(data?.error || '发送失败', 'error');
+            S.user = data.user;
+            if (S.lobby) S.lobby.user = data.user;
+            toast(`已送出「${data.card.name}」`, 'success');
+            openFriendsModal(friend.id);
+          });
+        });
+        grid.appendChild(option);
+      });
+      body.appendChild(grid);
+    }
+    cardPanel.appendChild(body);
+    clear(root);
+    root.appendChild(cardPanel);
+    show(root, true);
+  }
+
+  function openInvitePrompt(payload) {
+    const root = $('#modal-root');
+    clear(root);
+    const card = el('div', 'modal-card');
+    const head = el('div', 'modal-head');
+    const headText = el('div');
+    headText.appendChild(el('h2', '', '好友邀请'));
+    headText.appendChild(el('p', '', `${payload.from?.username || '好友'} 邀请你进入对局 ${payload.gameId}。`));
+    head.appendChild(headText);
+    card.appendChild(head);
+    const body = el('div', 'modal-body');
+    const actions = el('div', 'form-row-2');
+    const accept = el('button', 'btn btn-primary', '进入对局');
+    accept.type = 'button';
+    accept.addEventListener('click', () => {
+      closeModal();
+      openGame(payload.gameId);
+    });
+    const decline = el('button', 'btn btn-ghost', '暂不进入');
+    decline.type = 'button';
+    decline.addEventListener('click', () => closeModal());
+    actions.appendChild(accept);
+    actions.appendChild(decline);
+    body.appendChild(actions);
+    card.appendChild(body);
+    root.appendChild(card);
+    show(root, true);
+  }
+
+  function focusGameChat() {
+    if (S.screen !== 'game') return;
+    S.activeTab = 'chat';
+    S.unread = 0;
+    renderTabs();
+    renderGame();
+  }
+
+  function bindSocialEvents() {
+    if (!S.socket) return;
+    S.socket.on('friend:list:update', () => refreshFriends());
+    S.socket.on('friend:message', (payload) => {
+      if (!payload || !payload.message) return;
+      const friend = payload.friend || {};
+      const message = payload.message;
+      if (S.friends.activeId === message.from) {
+        S.friends.messages.push(message);
+        loadFriendHistory(message.from);
+        return;
+      }
+      if (friend.id) {
+        const known = friendById(friend.id);
+        if (known) {
+          known.online = friend.online;
+          known.unread = (Number(known.unread) || 0) + 1;
+        }
+        S.friends.unread += 1;
+        S.friends.byFriend[friend.id] = (Number(S.friends.byFriend[friend.id]) || 0) + 1;
+        updateFriendBadges();
+        showBanner({
+          text: `好友 ${friend.username || '好友'}：${message.text}`,
+          actionText: '查看聊天',
+          tone: 'friend',
+          kind: 'dm',
+          onClick: () => openFriendsModal(message.from),
+        });
+      }
+      if (S.friends.activeId && S.socket) refreshFriends();
+    });
+    S.socket.on('friend:card', (payload) => {
+      if (!payload) return;
+      const from = payload.friend?.username || '好友';
+      const name = payload.card?.name || '一张卡牌';
+      showBanner({
+        text: `${from} 送你一张「${name}」`,
+        actionText: '查看',
+        tone: 'friend',
+        kind: 'card',
+        onClick: () => openFriendsModal(payload.friend?.id || null),
+      });
+      refreshFriends();
+    });
+    S.socket.on('friend:added', (payload) => {
+      if (!payload || !payload.user) return;
+      refreshFriends();
+      showBanner({
+        text: `${payload.user.username} 已添加你为好友`,
+        actionText: '好友列表',
+        tone: 'friend',
+        kind: 'friend-add',
+        onClick: () => openFriendsModal(),
+      });
+    });
+    S.socket.on('friend:presence', (payload) => {
+      if (!payload) return;
+      const friend = friendById(payload.userId);
+      if (friend) {
+        friend.online = payload.online;
+        friend.lastSeen = payload.lastSeen;
+      }
+      if (friendsModalOpen()) {
+        if (S.friends.activeId === payload.userId && !S.friends.loading) renderFriendsModal(false);
+        else if (!S.friends.activeId) renderFriendsModal(true);
+      }
+      showBanner({
+        text: `好友 ${payload.username} ${payload.online ? '上线了' : '下线了'}`,
+        actionText: '好友',
+        tone: 'friend',
+        kind: 'presence',
+        onClick: () => openFriendsModal(payload.userId),
+      });
+    });
+    S.socket.on('friend:invite', (payload) => {
+      if (!payload || !payload.gameId) return;
+      openInvitePrompt(payload);
+    });
+    S.socket.on('game:chat-notice', (payload) => {
+      if (!payload) return;
+      const same = payload.gameId === S.gameId && S.screen === 'game';
+      if (same && S.activeTab === 'chat') return;
+      const from = payload.fromName || '对手';
+      showBanner({
+        text: `${from} · 对局 ${payload.gameId}：${payload.text}`,
+        actionText: same ? '查看消息' : '回到对局',
+        tone: 'game',
+        kind: 'game',
+        onClick: () => {
+          if (S.gameId === payload.gameId && S.screen === 'game') focusGameChat();
+          else openGame(payload.gameId);
+        },
+      });
+    });
+    S.socket.on('user:update', (payload) => {
+      if (!payload || !payload.user) return;
+      S.user = payload.user;
+      if (S.lobby) S.lobby.user = payload.user;
+      const header = $('#header-points');
+      if (header) header.textContent = String(payload.user.points || 0);
+      if (S.shopOpen) renderShopModal(true);
+      if (S.screen === 'lobby') renderLobby();
+    });
+  }
+
   async function api(path, options = {}) {
     const init = {
       method: options.method || 'GET',
@@ -510,6 +1038,20 @@
       }
     });
     $('#refresh-lobby').addEventListener('click', () => fetchLobby(true));
+    $('#global-banner-close').addEventListener('click', hideBanner);
+    $('#global-banner-action').addEventListener('click', () => {
+      const action = S.bannerAction;
+      hideBanner();
+      if (typeof action === 'function') action();
+    });
+    ['#open-friends', '#open-friends-game'].forEach((sel) => {
+      const btn = $(sel);
+      if (btn) btn.addEventListener('click', () => openFriendsModal());
+    });
+    $('#invite-friend').addEventListener('click', () => {
+      if (!S.gameId) return toast('请先进入一个对局', 'error');
+      openFriendsModal();
+    });
     const matchSkillBtn = $('#match-skill');
     const matchPvpBtn = $('#match-pvp');
     const matchCancelBtn = $('#match-cancel');
@@ -1664,6 +2206,7 @@
     clear($('#modal-root'));
     S.create = null;
     S.shopOpen = false;
+    S.friends.activeId = null;
   }
 
   function renderCreateModal() {
@@ -2043,6 +2586,7 @@
       S.socket = io({ withCredentials: true, transports: ['websocket', 'polling'] });
       S.socket.on('connect', () => {
         if (S.screen === 'game' && S.gameId) joinSocketGame();
+        if (S.user) refreshFriends({ notifyUnread: true });
         updateConnectionUI();
       });
       S.socket.on('disconnect', () => {
@@ -2056,6 +2600,7 @@
         updateConnectionUI();
       });
       bindSocketGameEvents();
+      bindSocialEvents();
     }
     if (!S.socket.connected) S.socket.connect();
   }
