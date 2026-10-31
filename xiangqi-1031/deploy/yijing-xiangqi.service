@@ -1,0 +1,24 @@
+[Unit]
+Description=Yijing Xiangqi AI Game (DeepSeek Flash)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=yijing
+Group=yijing
+WorkingDirectory=/code/yijing-xiangqi
+EnvironmentFile=/code/yijing-xiangqi/.env
+ExecStart=/usr/bin/node /code/yijing-xiangqi/server.js
+Restart=always
+RestartSec=3
+TimeoutStopSec=10
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/code/yijing-xiangqi/data
+
+[Install]
+WantedBy=multi-user.target
