@@ -409,6 +409,11 @@ function skillHints(game, color) {
     });
   }
 
+  // 探底细：查看对方当前卡牌，不结束回合
+  if (owned.has('scout')) {
+    add('scout', 2.5, '探底细：查看对方当前持有的全部卡牌，不结束本回合');
+  }
+
   // 一鼓作气：不换手，适合先叫杀再补刀
   if (owned.has('extra')) {
     add('extra', 3.5, '一鼓作气：本回合可连续走两步（用后仍需完成两次落子）');
@@ -462,8 +467,10 @@ function toolsFor(game, color) {
   if (!isSkillMode(game.mode)) return TOOLS;
   const tools = [...TOOLS];
   const points = Number(game.aiPoints?.[color]) || 0;
-  if (ownedSkillCards(game, color).length || points >= 35) tools.push(USE_SKILL_TOOL);
-  if (points >= 35) tools.push(BUY_CARD_TOOL);
+  const minPrice = SKILL_CARDS.reduce((min, card) => Math.min(min, card.price), Infinity);
+  const canBuy = points >= minPrice;
+  if (ownedSkillCards(game, color).length || canBuy) tools.push(USE_SKILL_TOOL);
+  if (canBuy) tools.push(BUY_CARD_TOOL);
   return tools;
 }
 
@@ -875,6 +882,7 @@ class Planner {
                 skillUses += 1;
                 const entry = outcome.skill || {};
                 let text = `技能「${entry.name || args.cardId}」发动成功${entry.summary ? `：${entry.summary}` : ''}。`;
+                if (outcome.reveal) text += `\n${outcome.reveal}`;
                 if (game.status !== 'playing') {
                   text += '对局已结束。';
                   brokeForError = true;

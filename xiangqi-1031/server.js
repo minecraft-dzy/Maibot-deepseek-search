@@ -745,7 +745,7 @@ io.on('connection', (socket) => {
     if (!game || socket.data.joined !== game.id) return ack({ ok: false, error: '对局不存在' });
     const result = service.useSkill(game, user, payload);
     if (!result.ok) return ack({ ok: false, error: result.error });
-    ack({ ok: true, skill: result.skill, cards: result.cards, state: result.state });
+    ack({ ok: true, skill: result.skill, cards: result.cards, state: result.state, reveal: result.reveal || null });
   });
 
   socket.on('resign', (payload, ack) => {
@@ -775,6 +775,22 @@ io.on('connection', (socket) => {
     const game = store.gameById(String(payload?.gameId || socket.data.joined || '').toUpperCase());
     if (!game || socket.data.joined !== game.id) return ack({ ok: false, error: '对局不存在' });
     ack(service.retryAI(game, user));
+  });
+
+  socket.on('update_ai_rules', (payload, ack) => {
+    if (typeof ack !== 'function') ack = () => {};
+    const game = store.gameById(String(payload?.gameId || socket.data.joined || '').toUpperCase());
+    if (!game || socket.data.joined !== game.id) return ack({ ok: false, error: '对局不存在' });
+    ack(service.updateAIDuelRules(game, user, payload));
+  });
+
+  socket.on('gift_points', (payload, ack) => {
+    if (typeof ack !== 'function') ack = () => {};
+    const game = store.gameById(String(payload?.gameId || socket.data.joined || '').toUpperCase());
+    if (!game || socket.data.joined !== game.id) return ack({ ok: false, error: '对局不存在' });
+    const result = service.giftPoints(game, user, payload);
+    if (!result.ok) return ack(result);
+    ack({ ...result, user: publicUser(user) });
   });
 
   socket.on('leave_game', () => {

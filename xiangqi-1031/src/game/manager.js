@@ -30,6 +30,7 @@ const AI_CARD_WEIGHTS = {
   extra: 26,
   fire: 24,
   dayun: 20,
+  scout: 8,
   drop: 18,
   royal: 15,
   swap: 13,
@@ -264,16 +265,18 @@ class GameService {
       game.status = 'playing';
       game.startedAt = createdAt;
     } else if (mode === 'aiskill') {
+      const initialPoints = clampInt(aiInitialPoints, AI_SKILL_POINTS, 0, 10000);
+      const captureReward = clampInt(aiCaptureReward, CAPTURE_REWARD, 0, 1000);
       game.red = this.makeSeat(X.RED, user, 'ai', redPrompt);
       game.black = this.makeSeat(X.BLACK, user, 'ai', blackPrompt);
       game.ai.red = makeAISession();
       game.ai.black = makeAISession();
-      game.aiPoints = { red: AI_SKILL_POINTS, black: AI_SKILL_POINTS };
+      game.aiPoints = { red: initialPoints, black: initialPoints };
       game.aiCards = {
-        red: this.chooseAICards(AI_SKILL_POINTS),
-        black: this.chooseAICards(AI_SKILL_POINTS),
+        red: this.chooseAICards(initialPoints),
+        black: this.chooseAICards(initialPoints),
       };
-      game.aiSkillConfig = { initialPoints: AI_SKILL_POINTS, captureReward: CAPTURE_REWARD };
+      game.aiSkillConfig = { initialPoints, captureReward };
       game.status = 'playing';
       game.startedAt = createdAt;
     } else {
@@ -776,6 +779,86 @@ class GameService {
     return { ok: true, game };
   }
 
+  isAIDuelRulesMode(game) {
+    return game.mode === 'aiskill' || (game.mode === 'skill' && !!game.aiOpponent);
+  }
+
+  updateAIDuelRules(game, user, payload) {
+    if (!this.isAIDuelRulesMode(game)) return { ok: false, error: '该模式不支持调整规则' };
+    if (game.creatorId !== user.id) return { ok: false, error: '只有房主可以调整规则' };
+    if (game.status !== 'playing') return { ok: false, error: '对局不在进行中' };
+    const current = game.aiSkillConfig || { initialPoints: AI_SKILL_POINTS, captureReward: CAPTURE_REWARD };
+    const initialPoints = clampInt(payload?.aiInitialPoints, current.initialPoints, 0, 10000);
+    const captureReward = clampInt(payload?.aiCaptureReward, current.captureReward, 0, 1000);
+    const delta = initialPoints - (Number(current.initialPoints) || AI_SKILL_POINTS);
+    game.aiPoints = game.aiPoints || {};
+    if (delta) {
+      [X.RED, X.BLACK].forEach((color) => {
+        if (game[color]?.type !== 'ai') return;
+        game.aiPoints[color] = Math.max(0, (Number(game.aiPoints[color]) || 0) + delta);
+      });
+    }
+    game.aiSkillConfig = { initialPoints, captureReward };
+    this.addChat(
+      game,
+      null,
+      `房主调整规则：AI 初始积分 ${initialPoints}，AI 每吃一子 +${captureReward} 积分。`,
+      'system',
+      false,
+    );
+    [X.RED, X.BLACK].forEach((color) => {
+      if (game[color]?.type !== 'ai') return;
+      this.enqueue(game, color, {
+        type: 'rules',
+        title: '房主调整规则',
+        text: `房主调整了对局规则：AI 初始积分 ${initialPoints}，每次吃子 +${captureReward} 积分。你当前有 ${game.aiPoints[color]} 积分。`,
+      });
+    });
+    this.save(game);
+    this.broadcast(game);
+    return { ok: true, config: { ...game.aiSkillConfig }, aiPoints: { ...game.aiPoints } };
+  }
+
+  giftPoints(game, user, payload) {
+    if (game.mode !== 'aiskill') return { ok: false, error: '只有双 AI 技能博弈可以给 AI 发积分' };
+    if (game.creatorId !== user.id) return { ok: false, error: '只有房主可以给 AI 发积分' };
+    if (game.status !== 'playing') return { ok: false, error: '对局不在进行中' };
+    const color = String(payload?.color || '');
+    if (![X.RED, X.BLACK].includes(color) || game[color]?.type !== 'ai') {
+      return { ok: false, error: '请选择一位 AI 棋手' };
+    }
+    const amount = Math.floor(Number(payload?.amount));
+    if (!Number.isFinite(amount) || amount < 1) return { ok: false, error: '请输入大于 0 的积分' };
+    if (amount > 100000) return { ok: false, error: '单次赠送积分过大' };
+    const balance = Math.max(0, Number(user.points) || 0);
+    if (balance < amount) return { ok: false, error: `你的积分不足，当前只有 ${balance} 分` };
+    user.points = balance - amount;
+    game.aiPoints = game.aiPoints || {};
+    game.aiPoints[color] = Math.max(0, Number(game.aiPoints[color]) || 0) + amount;
+    game.pointGifts = game.pointGifts || [];
+    game.pointGifts.push({
+      id: crypto.randomBytes(4).toString('hex'),
+      color,
+      amount,
+      userId: user.id,
+      at: nowIso(),
+    });
+    this.store.save();
+    this.save(game);
+    this.broadcast(game);
+    this.addTrace(game, color, {
+      type: 'gift',
+      title: '房主赞助',
+      text: `房主用个人积分转入 ${amount} 分，你现在有 ${game.aiPoints[color]} 分。`,
+    }, false);
+    this.enqueue(game, color, {
+      type: 'gift',
+      title: '收到房主积分',
+      text: `房主从自己的积分中转入 ${amount} 分给你，你现在有 ${game.aiPoints[color]} 分，可用于购买卡牌。这条消息只有你收到。`,
+    });
+    return { ok: true, color, amount, points: game.aiPoints[color] };
+  }
+
   retryAI(game, user) {
     if (game.status !== 'playing') return { ok: false, error: '对局不在进行中' };
     const color = this.colorForUser(game, user.id);
@@ -910,7 +993,7 @@ class GameService {
     };
   }
 
-  commitSkill(game, user, color, card, entry, keepTurn = false) {
+  commitSkill(game, user, color, card, entry, keepTurn = false, options = {}) {
     this.consumeCard(user, card.id);
     if (!keepTurn) {
       this.tickFrozen(game, color);
@@ -921,13 +1004,15 @@ class GameService {
     const status = X.getGameStatus(game.board, game.turn);
     this.save(game);
     this.emit(game, 'game:skill', { gameId: game.id, entry });
-    this.addChat(
-      game,
-      null,
-      `${game[color].name} 发动「${card.name}」${entry.summary ? `：${entry.summary}` : ''}`,
-      'system',
-      false,
-    );
+    if (!options.silent) {
+      this.addChat(
+        game,
+        null,
+        `${game[color].name} 发动「${card.name}」${entry.summary ? `：${entry.summary}` : ''}`,
+        'system',
+        false,
+      );
+    }
     if (status.over) {
       this.finish(game, { winner: status.winner, reason: status.reason, by: color });
     } else {
@@ -1035,6 +1120,7 @@ class GameService {
     if (card.mode === 'instant') {
       if (cardId === 'undo') return this.useUndo(game, user, card, color);
       if (cardId === 'extra') return this.useExtra(game, user, card, color);
+      if (cardId === 'scout') return this.useScout(game, user, card, color);
       return { ok: false, error: '这张卡牌暂未开放' };
     }
     if (card.mode === 'square') {
@@ -1327,6 +1413,38 @@ class GameService {
       summary: `${X.pieceName(piece)} 与 ${X.pieceName(other)} 交换位置`,
     });
     return this.commitSkill(game, user, color, card, entry);
+  }
+
+  opponentCardsFor(game, color) {
+    const opponent = color === X.RED ? X.BLACK : X.RED;
+    const seat = game[opponent];
+    if (seat?.type === 'ai') return game.aiCards?.[opponent] || {};
+    if (seat?.type === 'human' && seat.userId) {
+      const user = this.store.userById(seat.userId);
+      return user?.cards || {};
+    }
+    return {};
+  }
+
+  cardListText(cards) {
+    const entries = Object.entries(cards || {})
+      .filter(([, count]) => Number(count) > 0)
+      .map(([id, count]) => {
+        const card = cardById(id);
+        return `${card ? card.name : id}×${count}`;
+      });
+    return entries.length ? entries.join('、') : '无卡牌';
+  }
+
+  useScout(game, user, card, color) {
+    const opponent = color === X.RED ? X.BLACK : X.RED;
+    const reveal = `${X.SIDE_NAMES[opponent]}当前卡牌：${this.cardListText(this.opponentCardsFor(game, color))}`;
+    const entry = this.makeSkillEntry(color, card, {
+      summary: `探查了${X.SIDE_NAMES[opponent]}的当前卡牌（内容仅自己可见）`,
+    });
+    const result = this.commitSkill(game, user, color, card, entry, true, { silent: true });
+    if (!result.ok) return result;
+    return { ...result, reveal };
   }
 
   useExtra(game, user, card, color) {

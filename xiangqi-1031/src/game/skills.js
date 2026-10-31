@@ -161,6 +161,14 @@ const SKILL_CARDS = [
     description: '选择己方两枚非将棋子交换位置，交换后不能让自己被将军。',
   },
   {
+    id: 'scout',
+    name: '探底细',
+    rarity: '普通',
+    price: 10,
+    mode: 'instant',
+    description: '消耗 10 积分购买。使用后查看对方当前持有的全部卡牌，使用时不结束本回合；探查结果只有你自己可见，对方不会收到提示。',
+  },
+  {
     id: 'mine',
     name: '地雷',
     rarity: '稀有',

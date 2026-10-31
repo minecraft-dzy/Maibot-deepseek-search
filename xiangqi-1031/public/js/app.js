@@ -70,7 +70,7 @@
     dayun: '运', pawn: '兵', chariot: '炮', horse: '马', cannon: '炮', water: '水',
     chongxiang: '象', shield: '盾', undo: '悔', guard: '士', wall: '墙', freeze: '定',
     drop: '降', borrow: '风', extra: '鼓', revive: '魂', conspire: '策', swap: '换',
-    mine: '雷', fire: '火', royal: '驾',
+    mine: '雷', fire: '火', royal: '驾', scout: '探',
   };
   const CARD_PIECE = {
     dayun: 'R', pawn: 'P', chariot: 'R', horse: 'H', cannon: 'C', water: 'E',
@@ -541,6 +541,7 @@
     $('#room-code').addEventListener('click', () => copyText(S.gameId || '', '房间号已复制'));
     $('#pause-game').addEventListener('click', togglePause);
     $('#end-game').addEventListener('click', requestEndGame);
+    $('#duel-rules').addEventListener('click', openDuelAdminModal);
     $('#game-shop').addEventListener('click', () => openShopModal(true));
     $('#chat-form').addEventListener('submit', sendChat);
     $('#load-full-trace').addEventListener('click', loadFullTrace);
@@ -1712,39 +1713,7 @@
       updateNote();
       body.appendChild(note);
 
-      const grid = el('div', 'form-row-2');
-      const pointsField = el('label', 'field');
-      pointsField.appendChild(el('span', '', 'AI 初始积分（0–10000）'));
-      const pointsInput = el('input');
-      pointsInput.type = 'number';
-      pointsInput.min = '0';
-      pointsInput.max = '10000';
-      pointsInput.step = '1';
-      pointsInput.value = String(S.create.aiInitialPoints);
-      pointsInput.addEventListener('input', () => {
-        const value = Math.floor(Number(pointsInput.value) || 0);
-        S.create.aiInitialPoints = Math.min(10000, Math.max(0, value));
-        updateNote();
-      });
-      pointsField.appendChild(pointsInput);
-      grid.appendChild(pointsField);
-
-      const rewardField = el('label', 'field');
-      rewardField.appendChild(el('span', '', 'AI 每吃一子增加积分（0–1000）'));
-      const rewardInput = el('input');
-      rewardInput.type = 'number';
-      rewardInput.min = '0';
-      rewardInput.max = '1000';
-      rewardInput.step = '1';
-      rewardInput.value = String(S.create.aiCaptureReward);
-      rewardInput.addEventListener('input', () => {
-        const value = Math.floor(Number(rewardInput.value) || 0);
-        S.create.aiCaptureReward = Math.min(1000, Math.max(0, value));
-        updateNote();
-      });
-      rewardField.appendChild(rewardInput);
-      grid.appendChild(rewardField);
-      body.appendChild(grid);
+      body.appendChild(buildDuelConfigFields(updateNote));
 
       const inventory = Object.entries(S.user?.cards || {})
         .filter(([, count]) => Number(count) > 0)
@@ -1754,8 +1723,16 @@
         });
       body.appendChild(promptNote(inventory.length ? `你的卡牌：${inventory.join('、')}` : '你还没有卡牌，可以在对局内打开商店小窗用积分购买。'));
     } else if (S.create.mode === 'aiskill') {
-      const aiPoints = S.lobby?.aiSkillPoints || 300;
-      body.appendChild(promptNote(`两名 AI 各持 ${aiPoints} 积分，开局各自选购卡牌；每吃一子 +50 积分，可在局内补卡并互相用技能拆招。你只负责观战，可随时暂停或结束对局。`));
+      const note = el('div', 'modal-note');
+      note.appendChild(el('span', 'status-dot'));
+      const noteText = document.createTextNode('');
+      note.appendChild(noteText);
+      const updateNote = () => {
+        noteText.textContent = `两名 AI 各持 ${S.create.aiInitialPoints} 积分，开局各自选购卡牌；每吃一子 +${S.create.aiCaptureReward} 积分。你只负责观战，可随时暂停、调整规则或用个人积分赞助其中一位 AI。`;
+      };
+      updateNote();
+      body.appendChild(note);
+      body.appendChild(buildDuelConfigFields(updateNote));
       const grid = el('div', 'form-row-2');
       grid.appendChild(buildPromptBlock('red', '红方 · 赤焰'));
       grid.appendChild(buildPromptBlock('black', '黑方 · 玄甲'));
@@ -1854,6 +1831,42 @@
     return sides;
   }
 
+  function buildDuelConfigFields(onChange) {
+    const grid = el('div', 'form-row-2');
+    const pointsField = el('label', 'field');
+    pointsField.appendChild(el('span', '', 'AI 初始积分（0–10000）'));
+    const pointsInput = el('input');
+    pointsInput.type = 'number';
+    pointsInput.min = '0';
+    pointsInput.max = '10000';
+    pointsInput.step = '1';
+    pointsInput.value = String(S.create.aiInitialPoints);
+    pointsInput.addEventListener('input', () => {
+      const value = Math.floor(Number(pointsInput.value) || 0);
+      S.create.aiInitialPoints = Math.min(10000, Math.max(0, value));
+      if (onChange) onChange();
+    });
+    pointsField.appendChild(pointsInput);
+    grid.appendChild(pointsField);
+
+    const rewardField = el('label', 'field');
+    rewardField.appendChild(el('span', '', 'AI 每吃一子增加积分（0–1000）'));
+    const rewardInput = el('input');
+    rewardInput.type = 'number';
+    rewardInput.min = '0';
+    rewardInput.max = '1000';
+    rewardInput.step = '1';
+    rewardInput.value = String(S.create.aiCaptureReward);
+    rewardInput.addEventListener('input', () => {
+      const value = Math.floor(Number(rewardInput.value) || 0);
+      S.create.aiCaptureReward = Math.min(1000, Math.max(0, value));
+      if (onChange) onChange();
+    });
+    rewardField.appendChild(rewardInput);
+    grid.appendChild(rewardField);
+    return grid;
+  }
+
   function buildPromptBlock(color, label) {
     const wrap = el('div');
     const head = el('div', 'prompt-label');
@@ -1907,7 +1920,7 @@
         redPrompt: S.create.prompts.red,
         blackPrompt: S.create.prompts.black,
       };
-      if (S.create.mode === 'skillai') {
+      if (S.create.mode === 'skillai' || S.create.mode === 'aiskill') {
         body.aiInitialPoints = S.create.aiInitialPoints;
         body.aiCaptureReward = S.create.aiCaptureReward;
       }
@@ -2295,6 +2308,11 @@
     pause.textContent = S.game.paused ? '继续' : '暂停';
     const shop = $('#game-shop');
     if (shop) show(shop, S.game.mode === 'skill' && !!myColor());
+    const rules = $('#duel-rules');
+    const canRules = (S.game.mode === 'aiskill' || (S.game.mode === 'skill' && S.game.aiOpponent))
+      && S.game.creatorId === S.user?.id
+      && S.game.status === 'playing';
+    if (rules) show(rules, !!canRules);
     const end = $('#end-game');
     const own = myColor();
     const canEnd = (own && S.game.status === 'playing') || (aiOnly && S.game.creatorId === S.user?.id && S.game.status === 'playing');
@@ -2502,7 +2520,10 @@
     clear(bar);
     const head = el('div', 'skill-bar-head');
     head.appendChild(el('b', '', '双 AI 技能战况'));
-    head.appendChild(el('span', 'skill-tip', S.game.paused ? '对局已暂停' : '双方各自持分购卡，吃子 +50 分'));
+    const reward = Number(S.game.aiSkillConfig?.captureReward);
+    head.appendChild(el('span', 'skill-tip', S.game.paused
+      ? '对局已暂停'
+      : `双方各自持分购卡，吃子 +${Number.isFinite(reward) ? reward : 50} 分`));
     bar.appendChild(head);
     const list = el('div', 'skill-cards');
     ['red', 'black'].forEach((color) => {
@@ -3098,6 +3119,7 @@
       else if (card.id === 'drop') toast('奇兵已空投到场');
       else if (card.id === 'borrow') toast(count > 0 ? `借东风：吃掉 ${count} 枚棋子` : '借东风发动');
       else if (card.id === 'fire') toast(`火攻：烧毁 ${count} 枚棋子`);
+      else if (card.id === 'scout') toast(`探底细：${response.reveal || '对方无卡牌'}`);
       else if (count > 0) toast(`「${entry.name || card.name}」发动，吃掉 ${count} 枚棋子`);
       else toast(`「${entry.name || card.name}」发动成功`);
     });
@@ -3747,6 +3769,143 @@
         if (!input.value) input.value = text;
       }
     });
+  }
+
+  function openDuelAdminModal() {
+    if (!S.game || !S.socket) return;
+    if (!(S.game.mode === 'aiskill' || (S.game.mode === 'skill' && S.game.aiOpponent))) {
+      return toast('该模式不支持调整规则', 'error');
+    }
+    if (S.game.creatorId !== S.user?.id) return toast('只有房主可以调整规则', 'error');
+    if (S.game.status !== 'playing') return toast('对局不在进行中', 'error');
+
+    const root = $('#modal-root');
+    clear(root);
+    const card = el('div', 'modal-card');
+    const head = el('div', 'modal-head');
+    const headText = el('div');
+    headText.appendChild(el('h2', '', '对局规则与赞助'));
+    headText.appendChild(el('p', '', S.game.mode === 'aiskill'
+      ? '可实时修改 AI 积分规则，或用你自己的积分赞助其中一位 AI。'
+      : '可实时修改 AI 积分规则。'));
+    head.appendChild(headText);
+    const close = el('button', 'modal-close', '×');
+    close.type = 'button';
+    close.setAttribute('aria-label', '关闭');
+    close.addEventListener('click', closeModal);
+    head.appendChild(close);
+    card.appendChild(head);
+
+    const body = el('div', 'modal-body');
+    const config = S.game.aiSkillConfig || {};
+    const initial = Number.isFinite(Number(config.initialPoints)) ? Number(config.initialPoints) : 300;
+    const reward = Number.isFinite(Number(config.captureReward)) ? Number(config.captureReward) : 50;
+
+    const ruleGrid = el('div', 'form-row-2');
+    const pointsField = el('label', 'field');
+    pointsField.appendChild(el('span', '', 'AI 初始积分（调整会按差额同步当前积分）'));
+    const pointsInput = el('input');
+    pointsInput.type = 'number';
+    pointsInput.min = '0';
+    pointsInput.max = '10000';
+    pointsInput.step = '1';
+    pointsInput.value = String(initial);
+    pointsField.appendChild(pointsInput);
+    ruleGrid.appendChild(pointsField);
+
+    const rewardField = el('label', 'field');
+    rewardField.appendChild(el('span', '', 'AI 每吃一子增加积分'));
+    const rewardInput = el('input');
+    rewardInput.type = 'number';
+    rewardInput.min = '0';
+    rewardInput.max = '1000';
+    rewardInput.step = '1';
+    rewardInput.value = String(reward);
+    rewardField.appendChild(rewardInput);
+    ruleGrid.appendChild(rewardField);
+    body.appendChild(ruleGrid);
+
+    const saveRules = el('button', 'btn btn-primary btn-block', '保存规则');
+    saveRules.type = 'button';
+    saveRules.addEventListener('click', () => {
+      const aiInitialPoints = Math.min(10000, Math.max(0, Math.floor(Number(pointsInput.value) || 0)));
+      const aiCaptureReward = Math.min(1000, Math.max(0, Math.floor(Number(rewardInput.value) || 0)));
+      S.socket.emit('update_ai_rules', { gameId: S.game.id, aiInitialPoints, aiCaptureReward }, (response) => {
+        if (!response?.ok) return toast(response?.error || '规则修改失败', 'error');
+        toast(`规则已更新：初始 ${response.config.initialPoints} 分，吃子 +${response.config.captureReward} 分`, 'success');
+      });
+    });
+    body.appendChild(saveRules);
+
+    if (S.game.mode === 'aiskill') {
+      body.appendChild(el('div', 'modal-note', '赞助积分会从你的个人积分扣除，直接加到选中的 AI。只有这位 AI 会收到通知，另一位 AI 不会知道。'));
+      const giftRow = el('div', 'visibility-row');
+      const giftCopy = el('div', 'visibility-copy');
+      giftCopy.appendChild(el('b', '', '赞助 AI'));
+      const balance = Math.max(0, Number(S.user?.points) || 0);
+      const balanceText = el('span', '', `你当前有 ${balance} 积分。`);
+      giftCopy.appendChild(balanceText);
+      giftRow.appendChild(giftCopy);
+      body.appendChild(giftRow);
+
+      (() => {
+        let recipient = 'red';
+        const sideChoice = el('div', 'side-choice');
+        [
+          ['red', '红方 AI'],
+          ['black', '黑方 AI'],
+        ].forEach(([color, label]) => {
+          const btn = el('button', `side-btn ${color} ${recipient === color ? 'active' : ''}`);
+          btn.type = 'button';
+          btn.appendChild(el('span', 'seal-dot'));
+          btn.appendChild(document.createTextNode(label));
+          btn.addEventListener('click', () => {
+            recipient = color;
+            [...sideChoice.children].forEach((node) => node.classList.remove('active'));
+            btn.classList.add('active');
+          });
+          sideChoice.appendChild(btn);
+        });
+        body.appendChild(sideChoice);
+
+        const amountField = el('label', 'field');
+        amountField.appendChild(el('span', '', '赠送积分数量'));
+        const amountInput = el('input');
+        amountInput.type = 'number';
+        amountInput.min = '1';
+        amountInput.max = '100000';
+        amountInput.step = '1';
+        amountInput.value = '50';
+        amountField.appendChild(amountInput);
+        body.appendChild(amountField);
+
+        const send = el('button', 'btn btn-primary btn-block', '发送积分');
+        send.type = 'button';
+        send.addEventListener('click', () => {
+          const amount = Math.floor(Number(amountInput.value) || 0);
+          if (amount < 1) return toast('请输入大于 0 的积分', 'error');
+          S.socket.emit('gift_points', { gameId: S.game.id, color: recipient, amount }, (response) => {
+            if (!response?.ok) return toast(response?.error || '发送失败', 'error');
+            if (response.user) {
+              S.user = { ...(S.user || {}), ...response.user };
+              balanceText.textContent = `你当前有 ${Math.max(0, Number(S.user.points) || 0)} 积分。`;
+            }
+            toast(`已向${recipient === 'red' ? '红方' : '黑方'} AI 赞助 ${amount} 积分`, 'success');
+          });
+        });
+        body.appendChild(send);
+      })();
+    }
+
+    card.appendChild(body);
+    const foot = el('div', 'modal-foot');
+    const done = el('button', 'btn btn-ghost', '关闭');
+    done.type = 'button';
+    done.addEventListener('click', closeModal);
+    foot.appendChild(done);
+    card.appendChild(foot);
+    root.appendChild(card);
+    show(root, true);
   }
 
   async function togglePause() {
