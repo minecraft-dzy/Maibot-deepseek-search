@@ -1110,6 +1110,26 @@
       openBtn.type = 'button';
       openBtn.addEventListener('click', () => openGame(game.id));
       actions.appendChild(openBtn);
+      if (mine && game.creatorId === S.user?.id) {
+        const delBtn = el('button', 'mini-btn danger', '删除');
+        delBtn.type = 'button';
+        delBtn.addEventListener('click', async () => {
+          if (!window.confirm(`删除对局 ${game.id}？删除后无法恢复。`)) return;
+          delBtn.disabled = true;
+          try {
+            await api(`/api/games/${game.id}`, { method: 'DELETE' });
+            if (S.lobby?.myGames) {
+              S.lobby.myGames = S.lobby.myGames.filter((item) => item.id !== game.id);
+            }
+            renderLobby();
+            toast('对局已删除', 'success');
+          } catch (err) {
+            delBtn.disabled = false;
+            toast(err.message, 'error');
+          }
+        });
+        actions.appendChild(delBtn);
+      }
       item.appendChild(actions);
       root.appendChild(item);
     });
@@ -1708,7 +1728,7 @@
       const noteText = document.createTextNode('');
       note.appendChild(noteText);
       const updateNote = () => {
-        noteText.textContent = `你执红先行，与 DeepSeek Flash 进行技能对弈。AI 开局有 ${S.create.aiInitialPoints} 积分，会自行购买卡牌；AI 每吃一子 +${S.create.aiCaptureReward} 积分。你（人类）每吃一子固定 +50 积分。双方都可以在局内商店补卡并立即使用。`;
+        noteText.textContent = `你执红先行，与 DeepSeek Flash 进行技能对弈。AI 开局有 ${S.create.aiInitialPoints} 积分，会按自己与你过往对局的经验自行选牌；AI 每吃一子 +${S.create.aiCaptureReward} 积分。你（人类）每吃一子固定 +50 积分。双方都可以在局内商店补卡并立即使用。`;
       };
       updateNote();
       body.appendChild(note);
@@ -1728,7 +1748,7 @@
       const noteText = document.createTextNode('');
       note.appendChild(noteText);
       const updateNote = () => {
-        noteText.textContent = `两名 AI 各持 ${S.create.aiInitialPoints} 积分，开局各自选购卡牌；每吃一子 +${S.create.aiCaptureReward} 积分。你只负责观战，可随时暂停、调整规则或用个人积分赞助其中一位 AI。`;
+        noteText.textContent = `两名 AI 各持 ${S.create.aiInitialPoints} 积分，开局按各自执子颜色与你过往对局的经验独立选牌；每吃一子 +${S.create.aiCaptureReward} 积分。你只负责观战，可随时暂停、调整规则或用个人积分赞助其中一位 AI。`;
       };
       updateNote();
       body.appendChild(note);
@@ -2191,8 +2211,14 @@
       }
     });
     S.socket.on('game:deleted', (payload) => {
-      if (!payload || payload.gameId !== S.gameId) return;
-      toast('对局已被管理员删除', 'error');
+      if (!payload) return;
+      if (S.lobby) {
+        if (S.lobby.myGames) S.lobby.myGames = S.lobby.myGames.filter((g) => g.id !== payload.gameId);
+        if (S.lobby.publicGames) S.lobby.publicGames = S.lobby.publicGames.filter((g) => g.id !== payload.gameId);
+        if (S.screen === 'lobby') renderLobby();
+      }
+      if (payload.gameId !== S.gameId) return;
+      toast('对局已被删除', 'error');
       leaveGameScreen();
     });
   }

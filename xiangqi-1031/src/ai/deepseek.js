@@ -25,6 +25,18 @@ class DeepSeekClient {
     const endpoint = this.baseUrl.endsWith('/v1')
       ? `${this.baseUrl}/chat/completions`
       : `${this.baseUrl}/chat/completions`;
+    const payload = {
+      model: activeModel,
+      messages,
+      stream: true,
+      max_tokens: 8192,
+      temperature: 0.65,
+      reasoning_effort: this.effort,
+    };
+    if (tools && tools.length) {
+      payload.tools = tools;
+      payload.tool_choice = 'auto';
+    }
     let response;
     try {
       response = await fetch(endpoint, {
@@ -33,16 +45,7 @@ class DeepSeekClient {
           Authorization: `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          model: activeModel,
-          messages,
-          tools,
-          tool_choice: 'auto',
-          stream: true,
-          max_tokens: 8192,
-          temperature: 0.65,
-          reasoning_effort: this.effort,
-        }),
+        body: JSON.stringify(payload),
         signal: controller.signal,
       });
     } catch (err) {

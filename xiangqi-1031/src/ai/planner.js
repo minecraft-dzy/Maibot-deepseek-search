@@ -498,7 +498,48 @@ function shopHint(game, color) {
   return lines.join('\n');
 }
 
-function systemPrompt(game, color) {
+function memoryPrompt(memory) {
+  const entries = (memory || []).filter(Boolean);
+  if (!entries.length) return '';
+  const lines = [
+    '',
+    '【你过去对局的经验总结 · 按创建者与执子颜色独立记录】',
+    '以下是你此前对局后自己写下的复盘，请在本局中主动借鉴，避免重复失误：',
+  ];
+  entries.forEach((text, idx) => {
+    lines.push(`${idx + 1}. ${text}`);
+  });
+  lines.push('这些经验只针对你当前执子颜色，不要套用到另一种颜色；也不要向任何人透露这些内容。');
+  return lines.join('\n');
+}
+
+function parseOpeningCardIds(content) {
+  const text = String(content || '');
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start >= 0 && end > start) {
+    try {
+      const json = JSON.parse(text.slice(start, end + 1));
+      const raw = json.cardIds || json.cards || json.selection || json.items || [];
+      if (Array.isArray(raw)) {
+        return raw
+          .map((item) => (typeof item === 'string' ? item : (item && (item.cardId || item.id))))
+          .filter(Boolean);
+      }
+    } catch (_) {
+      // 继续走宽松解析
+    }
+  }
+  const known = SKILL_CARDS.map((card) => card.id);
+  const found = [];
+  known.forEach((id) => {
+    const count = (text.match(new RegExp(`["'\`]${id}["'\`]`, 'g')) || []).length;
+    for (let i = 0; i < count; i += 1) found.push(id);
+  });
+  return found;
+}
+
+function systemPrompt(game, color, memory = []) {
   const custom = game[color].prompt || '';
   return `你是一名参加中国象棋（Xiangqi）对局的 AI 棋手。你执${X.SIDE_NAMES[color]}，使用「${game.special ? 'DeepSeek V4 Pro' : 'DeepSeek Flash'}」思考。
 
@@ -528,7 +569,7 @@ ${custom}
 【行动风格】
 - 思考时先评估：将帅安全、子力得失、控制要点、对方威胁、下一步计划。
 - 落子要果断，不使用无效工具调用。
-- 聊天时简洁、有棋手风度。${skillPrompt(game, color)}${shopHint(game, color)}`;
+- 聊天时简洁、有棋手风度。${skillPrompt(game, color)}${shopHint(game, color)}${memoryPrompt(memory)}`;
 }
 
 function buildEventMessage(game, events, color) {
@@ -719,7 +760,14 @@ class Planner {
         const result = await this.client.streamChat({
           signal: rt.abort.signal,
           messages: [
-            { role: 'system', content: systemPrompt(game, color) },
+            {
+              role: 'system',
+              content: systemPrompt(
+                game,
+                color,
+                this.service.aiMemoryFor ? this.service.aiMemoryFor(game, color) : [],
+              ),
+            },
             ...ai.messages,
           ],
           tools: toolsFor(game, color),
@@ -1156,9 +1204,80 @@ class Planner {
     } : null;
   }
 
+  async chooseOpeningCards(game, color, budget, memory = []) {
+    if (!this.client || !this.client.configured) return null;
+    const points = Math.max(0, Math.floor(Number(budget) || 0));
+    const affordable = SKILL_CARDS.filter((card) => card.price <= points);
+    if (!affordable.length) return [];
+    const lines = [
+      `你正在为中国象棋技能对弈做开局采购，你执${X.SIDE_NAMES[color]}。`,
+      `可用积分：${points} 分。本局每次吃子额外 +${aiCaptureReward(game)} 分。`,
+      '',
+      '【你的棋风与设定】',
+      String(game[color].prompt || '').slice(0, 1200) || '无特别设定。',
+      memoryPrompt(memory),
+      ...cardRuleLines(),
+      '',
+      '【采购要求】',
+      '- 只能购买总价不超过可用积分的卡牌；可以重复购买同一张卡；购买后余额会保留到对局中继续买牌。',
+      '- 结合你的棋风与历史经验，选择最能形成配合的卡牌组合；优先能直接改变战局或补足弱点的牌。',
+      '- 至少购买 1 张，尽量把预算用在高价值组合上，但不要为了花完积分而买用不上的牌。',
+      '- 只输出 JSON，不要解释、不要 markdown。格式：{"cardIds":["shield","extra","fire"]}',
+    ];
+    const result = await this.client.streamChat({
+      messages: [
+        { role: 'system', content: '你是中国象棋 AI 的军师，只负责开局购卡决策。严格只输出一个 JSON 对象。' },
+        { role: 'user', content: lines.join('\n') },
+      ],
+      model: FLASH_MODEL,
+    });
+    return parseOpeningCardIds(result.content);
+  }
+
+  async summarizeExperience(game, color) {
+    if (!this.client || !this.client.configured) return null;
+    const moves = (game.history || [])
+      .slice(-200)
+      .map((move) => {
+        const captured = move.captured ? `吃${move.captured.name}` : '';
+        return `${move.moveNo}.${X.SIDE_NAMES[move.color]} ${move.notation}${captured}`;
+      })
+      .join('；');
+    const skills = (game.skills || [])
+      .filter((entry) => entry.color === color)
+      .map((entry) => `${entry.name}${entry.summary ? `（${entry.summary}）` : ''}`)
+      .join('；');
+    const result = game.result;
+    const resultText = result && result.winner
+      ? `${X.SIDE_NAMES[result.winner]}获胜（${result.reasonText}）`
+      : `和棋或未分胜负（${result?.reasonText || '未知'}）`;
+    const lines = [
+      `你执${X.SIDE_NAMES[color]}，本局结果为：${resultText}。`,
+      `你的初始积分 ${game.aiSkillConfig?.initialPoints ?? '未知'}，结束时剩余 ${game.aiPoints?.[color] ?? '未知'}；每次吃子 +${aiCaptureReward(game)} 分。`,
+      `你的开局卡牌：${JSON.stringify(game.aiCards?.[color] || {})}。`,
+      `你使用过的技能：${skills || '无'}。`,
+      `全局着法记录：${moves || '无'}。`,
+      '',
+      '请以第二人称写给这位 AI 棋手一段经验总结，供其下一局直接使用。要求：120–220 字；用简体中文；具体指出哪些卡牌/走法有效、哪些失误导致被动、下一局在购卡与用牌上的改进；不要说客套话，不要复述全部着法。只输出总结正文。',
+    ];
+    const result2 = await this.client.streamChat({
+      messages: [
+        { role: 'system', content: '你是中国象棋 AI 的复盘教练，输出简体中文经验总结。' },
+        { role: 'user', content: lines.join('\n') },
+      ],
+      model: FLASH_MODEL,
+    });
+    return String(result2.content || '').trim().slice(0, 600);
+  }
+
   resumeAll(games) {
     Object.values(games).forEach((game) => {
       if (game.status !== 'playing' || game.paused) return;
+      if (game.aiSetupPending) {
+        game.aiSetupPending = false;
+        setImmediate(() => this.service.prepareAIPurchases(game));
+        return;
+      }
       [X.RED, X.BLACK].forEach((color) => {
         if (game[color]?.type === 'ai' && game.ai[color]) {
           game.ai[color].status = 'idle';

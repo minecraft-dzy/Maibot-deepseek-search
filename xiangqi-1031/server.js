@@ -127,6 +127,23 @@ function normalizePoints(value) {
   return Math.max(0, Math.min(POINTS_MAX, n));
 }
 
+function purgeGame(game) {
+  const id = game.id;
+  game.status = 'finished';
+  game.paused = true;
+  if (service.planner) {
+    service.planner.cancel(game, 'red');
+    service.planner.cancel(game, 'black');
+  }
+  delete store.games[id];
+  for (const key of [...presence.keys()]) {
+    if (key.startsWith(`${id}:`)) presence.delete(key);
+  }
+  if (service.roomSizes) service.roomSizes.delete(id);
+  store.save();
+  io.to(`game:${id}`).emit('game:deleted', { gameId: id });
+}
+
 function requireAdmin(req, res, next) {
   if (!req.user) return res.status(401).json({ error: '请先登录' });
   if (!req.user.admin) return res.status(403).json({ error: '需要管理员权限' });
@@ -478,15 +495,7 @@ app.delete('/api/admin/games/:id', requireUser, requireAdmin, (req, res) => {
   const id = String(req.params.id || '').toUpperCase();
   const game = store.gameById(id);
   if (!game) return res.status(404).json({ error: '对局不存在' });
-  game.status = 'finished';
-  game.paused = true;
-  delete store.games[id];
-  for (const key of [...presence.keys()]) {
-    if (key.startsWith(`${id}:`)) presence.delete(key);
-  }
-  if (service.roomSizes) service.roomSizes.delete(id);
-  store.save();
-  io.to(`game:${id}`).emit('game:deleted', { gameId: id });
+  purgeGame(game);
   res.json({ ok: true });
 });
 
@@ -558,6 +567,15 @@ app.post('/api/games/:id/join', requireUser, (req, res) => {
   leaveMatchmaking(req.user.id);
   const result = service.joinPvp(game, req.user);
   res.json({ role: result.role, state: service.toState(game) });
+});
+
+app.delete('/api/games/:id', requireUser, (req, res) => {
+  const id = String(req.params.id || '').toUpperCase();
+  const game = store.gameById(id);
+  if (!game) return res.status(404).json({ error: '对局不存在' });
+  if (game.creatorId !== req.user.id) return res.status(403).json({ error: '只有房主可以删除对局' });
+  purgeGame(game);
+  res.json({ ok: true, gameId: id });
 });
 
 app.get('/api/games/:id', requireUser, (req, res) => {

@@ -225,7 +225,7 @@ class GameService {
         game.black = this.makeSeat(X.BLACK, user, 'ai', blackPrompt || DEFAULT_PROMPTS.black);
         game.ai.black = makeAISession();
         game.aiPoints = { black: initialPoints };
-        game.aiCards = { black: this.chooseAICards(initialPoints) };
+        game.aiCards = {};
         game.aiSkillConfig = { initialPoints, captureReward };
         game.status = 'playing';
         game.startedAt = createdAt;
@@ -272,10 +272,7 @@ class GameService {
       game.ai.red = makeAISession();
       game.ai.black = makeAISession();
       game.aiPoints = { red: initialPoints, black: initialPoints };
-      game.aiCards = {
-        red: this.chooseAICards(initialPoints),
-        black: this.chooseAICards(initialPoints),
-      };
+      game.aiCards = {};
       game.aiSkillConfig = { initialPoints, captureReward };
       game.status = 'playing';
       game.startedAt = createdAt;
@@ -287,17 +284,119 @@ class GameService {
     this.addChat(game, null, '对局已创建，等待棋手入席。', 'system', false);
     if (game.status === 'playing') {
       this.addChat(game, null, '对局开始，红方先行。', 'system', false);
-      if (game.aiOpponent || isSkillMode(game.mode)) this.announceAIPurchase(game);
-      if (game.turn === X.RED && game.red.type === 'ai') {
-        this.enqueue(game, X.RED, {
-          type: 'game_start',
-          title: '对局开始',
-          text: '对局开始，你执红先行。请查看棋盘并落子。',
-        });
+      const aiSkillSeats = [X.RED, X.BLACK].filter((color) => game[color]?.type === 'ai');
+      if (isSkillMode(game.mode) && aiSkillSeats.length) {
+        game.aiSetupPending = true;
+        this.save(game);
+        setImmediate(() => this.prepareAIPurchases(game));
+      } else {
+        if (game.aiOpponent || isSkillMode(game.mode)) this.announceAIPurchase(game);
+        this.startAITurn(game);
       }
     }
     this.broadcast(game);
     return game;
+  }
+
+  startAITurn(game) {
+    if (!game || game.status !== 'playing' || game.paused) return;
+    if (game[game.turn]?.type !== 'ai') return;
+    this.enqueue(game, game.turn, {
+      type: 'game_start',
+      title: '对局开始',
+      text: `对局开始，你执${X.SIDE_NAMES[game.turn]}。请查看棋盘并落子。`,
+    });
+  }
+
+  // 开局由 AI 自己用模型选牌；模型失败或结果非法时回退到权重随机。
+  async prepareAIPurchases(game) {
+    if (!game || this.store.gameById(game.id) !== game || game.status !== 'playing') {
+      if (game) game.aiSetupPending = false;
+      return;
+    }
+    const colors = [X.RED, X.BLACK].filter((color) => game[color]?.type === 'ai' && isSkillMode(game.mode));
+    const budget = clampInt(game.aiSkillConfig?.initialPoints, AI_SKILL_POINTS, 0, 10000);
+    game.aiCards = game.aiCards || {};
+    await Promise.all(colors.map(async (color) => {
+      let cardIds = null;
+      try {
+        if (this.planner && typeof this.planner.chooseOpeningCards === 'function') {
+          cardIds = await this.planner.chooseOpeningCards(game, color, budget, this.aiMemoryFor(game, color));
+        }
+      } catch (err) {
+        cardIds = null;
+      }
+      const picked = this.buildAICardsFromIds(cardIds, budget);
+      game.aiCards[color] = Object.keys(picked).length ? picked : this.chooseAICards(budget);
+    }));
+    if (this.store.gameById(game.id) !== game || game.status !== 'playing') return;
+    game.aiSetupPending = false;
+    this.save(game);
+    this.announceAIPurchase(game);
+    this.broadcast(game);
+    this.startAITurn(game);
+  }
+
+  buildAICardsFromIds(cardIds, budget) {
+    const cards = {};
+    if (!Array.isArray(cardIds)) return cards;
+    let remaining = Math.max(0, Number(budget) || 0);
+    cardIds.forEach((rawId) => {
+      const id = String(rawId || '').trim();
+      const card = cardById(id);
+      if (!card || card.price > remaining) return;
+      cards[card.id] = (cards[card.id] || 0) + 1;
+      remaining -= card.price;
+    });
+    return cards;
+  }
+
+  aiMemoryOwner(game, color) {
+    const seat = game[color];
+    const ownerId = (seat && seat.type === 'ai' && seat.userId) || game.creatorId;
+    return this.store.userById(ownerId);
+  }
+
+  aiMemoryFor(game, color) {
+    const user = this.aiMemoryOwner(game, color);
+    const entries = user && user.aiMemory && Array.isArray(user.aiMemory[color]) ? user.aiMemory[color] : [];
+    return entries
+      .slice(-3)
+      .map((entry) => (typeof entry === 'string' ? entry : entry && entry.text))
+      .filter(Boolean);
+  }
+
+  recordAIExperience(game) {
+    if (!this.planner || typeof this.planner.summarizeExperience !== 'function') return;
+    if ((game.history || []).length < 2) return;
+    [X.RED, X.BLACK].forEach((color) => {
+      if (game[color]?.type !== 'ai' || !game.ai?.[color]) return;
+      const owner = this.aiMemoryOwner(game, color);
+      if (!owner) return;
+      Promise.resolve(this.planner.summarizeExperience(game, color))
+        .then((text) => {
+          const summary = clampText(text, 600);
+          if (!summary) return;
+          const user = this.store.userById(owner.id);
+          if (!user) return;
+          user.aiMemory = user.aiMemory && typeof user.aiMemory === 'object'
+            ? user.aiMemory
+            : { red: [], black: [] };
+          user.aiMemory[color] = Array.isArray(user.aiMemory[color]) ? user.aiMemory[color] : [];
+          user.aiMemory[color].push({ at: nowIso(), gameId: game.id, text: summary });
+          if (user.aiMemory[color].length > 4) {
+            user.aiMemory[color].splice(0, user.aiMemory[color].length - 4);
+          }
+          this.store.save();
+          this.emit(game, 'ai:experience', {
+            gameId: game.id,
+            color,
+            ownerId: user.id,
+            text: summary,
+          });
+        })
+        .catch(() => { /* 总结经验失败不影响对局 */ });
+    });
   }
 
   createMatchedGame(mode, userA, userB) {
@@ -447,6 +546,7 @@ class GameService {
 
   enqueue(game, color, event) {
     if (!this.planner) return;
+    if (game.aiSetupPending) return;
     this.planner.enqueue(game, color, event);
   }
 
@@ -717,6 +817,7 @@ class GameService {
     this.addChat(game, null, text, 'system', false);
     this.broadcast(game);
     this.emit(game, 'game:over', { gameId: game.id, result: game.result, reward: game.reward || null });
+    this.recordAIExperience(game);
   }
 
   applyStats(game) {
